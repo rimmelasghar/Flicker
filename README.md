@@ -219,7 +219,7 @@ ruff check . && ruff format --check . && pytest
 ```
 
 Python 3.12 and FastAPI on the server; vanilla HTML, CSS and JavaScript on both pages, with
-no build step. Branches, commit rules and milestones are in [AGENTS.md](AGENTS.md).
+no build step.
 
 ## License
 

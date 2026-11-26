@@ -1,4 +1,4 @@
-"""Settings loaded from environment variables (see AGENTS.md, Config)."""
+"""Settings loaded from environment variables."""
 
 import ipaddress
 import os
