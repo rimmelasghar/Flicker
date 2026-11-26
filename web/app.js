@@ -123,8 +123,11 @@ function onHeading(degrees) {
   renderDirection();
 }
 
-async function enableCompass() {
+// auto: tried on page load without a tap. iPhone refuses that, which is
+// not a real "denied", so the button stays available.
+async function enableCompass({ auto = false } = {}) {
   const result = await startCompass(onHeading);
+  if (auto && result === "denied") return;
   state.compass = result === "ok" ? "on" : result;
   renderDirection();
 }
@@ -238,7 +241,9 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
-  $("compass-btn").addEventListener("click", enableCompass);
+  $("compass-btn").addEventListener("click", () => enableCompass());
+  // Android grants orientation without a tap, so try straight away.
+  enableCompass({ auto: true });
   attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
   state.token = takeTokenFromLink() ?? storeGet(TOKEN_KEY);
   render();

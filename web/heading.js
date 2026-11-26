@@ -14,19 +14,14 @@ export function stopCompass() {
   }
 }
 
-// iPhone Safari only exposes orientation after the user allows it, and the
-// prompt can only be opened from a tap.
-export function needsPermission() {
-  return typeof window.DeviceOrientationEvent?.requestPermission === "function";
-}
-
-// Starts calling onHeading(degrees). On iPhone, call this from a tap.
-// Resolves to "ok", "denied" or "unsupported".
+// Starts calling onHeading(degrees). Resolves to "ok", "denied" or
+// "unsupported". iPhone Safari only grants access when this runs from a
+// tap; recent Chrome also has requestPermission but grants it silently.
 export async function startCompass(onHeading) {
   stopCompass();
   if (!window.isSecureContext || !window.DeviceOrientationEvent) return "unsupported";
 
-  if (needsPermission()) {
+  if (typeof window.DeviceOrientationEvent.requestPermission === "function") {
     let answer = "denied";
     try {
       answer = await window.DeviceOrientationEvent.requestPermission();
@@ -36,9 +31,30 @@ export async function startCompass(onHeading) {
     if (answer !== "granted") return "denied";
   }
 
+  // Android Chrome: plain deviceorientation is relative to an arbitrary
+  // start direction; the absolute event is referenced to north.
+  if ("ondeviceorientationabsolute" in window) {
+    listen("deviceorientationabsolute", (event) => {
+      const heading = fromAlpha(event);
+      if (heading !== null) onHeading(heading);
+    });
+    return "ok";
+  }
+
   listen("deviceorientation", (event) => {
-    // iOS: already a true-north-referenced compass heading.
-    if (typeof event.webkitCompassHeading === "number") onHeading(event.webkitCompassHeading);
+    // iOS: already a north-referenced compass heading.
+    if (typeof event.webkitCompassHeading === "number") {
+      onHeading(event.webkitCompassHeading);
+      return;
+    }
+    // Other browsers (e.g. Firefox) mark north-referenced readings absolute.
+    const heading = event.absolute ? fromAlpha(event) : null;
+    if (heading !== null) onHeading(heading);
   });
   return "ok";
+}
+
+// alpha grows counter-clockwise; compass headings grow clockwise.
+function fromAlpha(event) {
+  return typeof event.alpha === "number" ? (360 - event.alpha) % 360 : null;
 }
