@@ -1,6 +1,33 @@
 // Compass heading (degrees clockwise from north) from device orientation.
 
+const SMOOTH_MS = 300; // readings averaged over this recent window
+
 let active = null;
+
+const toRad = (deg) => (deg * Math.PI) / 180;
+const toDeg = (rad) => (rad * 180) / Math.PI;
+export const normalize = (deg) => ((deg % 360) + 360) % 360;
+
+// Mean of angles on a circle: 359 and 1 average to 0, not 180.
+export function circularMean(angles) {
+  let x = 0;
+  let y = 0;
+  for (const a of angles) {
+    x += Math.cos(toRad(a));
+    y += Math.sin(toRad(a));
+  }
+  return normalize(toDeg(Math.atan2(y, x)));
+}
+
+// Returns a function that takes a raw reading and gives the smoothed heading.
+export function createSmoother(windowMs = SMOOTH_MS) {
+  let samples = [];
+  return (heading, now = performance.now()) => {
+    samples.push({ heading, t: now });
+    samples = samples.filter((s) => now - s.t <= windowMs);
+    return circularMean(samples.map((s) => s.heading));
+  };
+}
 
 function listen(type, handler) {
   window.addEventListener(type, handler);
@@ -14,11 +41,13 @@ export function stopCompass() {
   }
 }
 
-// Starts calling onHeading(degrees). Resolves to "ok", "denied" or
+// Starts calling onHeading(smoothed degrees). Resolves to "ok", "denied" or
 // "unsupported". iPhone Safari only grants access when this runs from a
 // tap; recent Chrome also has requestPermission but grants it silently.
-export async function startCompass(onHeading) {
+export async function startCompass(onReading) {
   stopCompass();
+  const smooth = createSmoother();
+  const onHeading = (raw) => onReading(smooth(raw));
   if (!window.isSecureContext || !window.DeviceOrientationEvent) return "unsupported";
 
   if (typeof window.DeviceOrientationEvent.requestPermission === "function") {
