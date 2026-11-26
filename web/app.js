@@ -18,7 +18,12 @@ const state = {
   compass: "off",
   // Latest heading in degrees, or null before the first reading.
   heading: null,
+  // { heading, savedAt } saved when the user pointed at the laptop.
+  calibration: null,
+  calibrating: false,
 };
+
+const CALIBRATION_KEY = "flick.calibration";
 
 const $ = (id) => document.getElementById(id);
 
@@ -93,12 +98,15 @@ function render() {
   pill.className = `pill ${tone}`;
 
   const unpaired = state.pairing === "unpaired";
+  const calibrating = !unpaired && state.calibrating;
+  const main = !unpaired && !calibrating;
   $("direction").hidden = unpaired;
   renderDirection();
   $("unpaired").hidden = !unpaired;
-  $("empty").hidden = unpaired || state.photo !== null;
-  $("card").hidden = unpaired || state.photo === null;
-  $("pick").hidden = unpaired;
+  $("calibrate").hidden = !calibrating;
+  $("empty").hidden = !main || state.photo !== null;
+  $("card").hidden = !main || state.photo === null;
+  $("pick").hidden = !main;
 }
 
 const COMPASS_TEXT = {
@@ -109,13 +117,17 @@ const COMPASS_TEXT = {
 
 function renderDirection() {
   const on = state.compass === "on";
-  $("dir-text").textContent =
-    on && state.heading !== null
-      ? `Heading ${Math.round(state.heading)}°`
-      : on
-        ? "Waiting for compass…"
-        : COMPASS_TEXT[state.compass];
+  const reading = state.heading === null ? null : Math.round(state.heading);
+  let text = COMPASS_TEXT[state.compass];
+  if (on && reading === null) text = "Waiting for compass…";
+  else if (on && !state.calibration) text = "Not calibrated: tap Calibrate";
+  else if (on) text = `Heading ${reading}°, laptop at ${Math.round(state.calibration.heading)}°`;
+  $("dir-text").textContent = text;
   $("compass-btn").hidden = on || state.compass === "unsupported";
+  $("calibrate-btn").hidden = !on || state.calibrating;
+  $("calibrate-btn").textContent = state.calibration ? "Re-calibrate" : "Calibrate";
+  $("cal-heading").textContent = reading === null ? "–" : `${reading}°`;
+  $("cal-save").disabled = reading === null;
 }
 
 function onHeading(degrees) {
@@ -129,7 +141,31 @@ async function enableCompass({ auto = false } = {}) {
   const result = await startCompass(onHeading);
   if (auto && result === "denied") return;
   state.compass = result === "ok" ? "on" : result;
-  renderDirection();
+  // First time with a working compass: go straight to calibration.
+  if (state.compass === "on" && !state.calibration && !auto) state.calibrating = true;
+  render();
+}
+
+function loadCalibration() {
+  try {
+    const saved = JSON.parse(storeGet(CALIBRATION_KEY));
+    return Number.isFinite(saved?.heading) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCalibrating(on) {
+  state.calibrating = on;
+  render();
+}
+
+function saveCalibration() {
+  if (state.heading === null) return;
+  state.calibration = { heading: state.heading, savedAt: new Date().toISOString() };
+  storeSet(CALIBRATION_KEY, JSON.stringify(state.calibration));
+  setStatus("Laptop direction saved.", "ok");
+  setCalibrating(false);
 }
 
 function setPhoto(file) {
@@ -242,6 +278,10 @@ async function onFlick(dx) {
 async function init() {
   $("file-input").addEventListener("change", onPick);
   $("compass-btn").addEventListener("click", () => enableCompass());
+  $("calibrate-btn").addEventListener("click", () => setCalibrating(true));
+  $("cal-save").addEventListener("click", saveCalibration);
+  $("cal-cancel").addEventListener("click", () => setCalibrating(false));
+  state.calibration = loadCalibration();
   // Android grants orientation without a tap, so try straight away.
   enableCompass({ auto: true });
   attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
