@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111114">
+  <title>Flick</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <h1>Flick</h1>
+    <span id="pair-status" class="pill">…</span>
+  </header>
+
+  <main id="stage" class="stage">
+    <section id="unpaired" class="notice" hidden>
+      <h2>Not paired</h2>
+      <p>On the laptop, open <code>http://localhost:8080/pair</code> and scan the QR code with this phone.</p>
+    </section>
+
+    <section id="empty" class="notice" hidden>
+      <p>Choose a photo, point the phone at the laptop, then swipe it up.</p>
+    </section>
+
+    <div id="card" class="card" hidden>
+      <img id="card-img" alt="Selected photo" draggable="false">
+    </div>
+  </main>
+
+  <footer class="bar bottom">
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <label id="pick" class="button" hidden>
+      Choose photo
+      <input id="file-input" type="file" accept="image/*" hidden>
+    </label>
+  </footer>
+</body>
+</html>
