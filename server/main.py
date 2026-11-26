@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import Annotated
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, File, UploadFile
+from fastapi.staticfiles import StaticFiles
 
 from server import __version__
 from server.auth import TokenStore, token_guard
@@ -13,6 +15,8 @@ from server.certs import ensure_certificate
 from server.config import PAIR_PORT, PHONE_PORT, Settings, load_settings
 from server.pairing import create_pair_app
 from server.upload import save_upload
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
@@ -36,6 +40,8 @@ def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
         return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
     app.include_router(protected)
+    # Phone web page; mounted last so it never shadows the API routes.
+    app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
     return app
 
 

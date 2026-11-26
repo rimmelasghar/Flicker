@@ -15,6 +15,7 @@ RUN useradd --create-home --uid 1000 flick \
     && chown flick:flick /data /inbox
 
 COPY server/ server/
+COPY web/ web/
 
 USER flick
 
