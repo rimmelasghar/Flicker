@@ -111,24 +111,14 @@ you keep scan it again.
 
 ## How it works
 
-```mermaid
-flowchart LR
-  subgraph Phone["Phone browser"]
-    P1["Photo card<br/>swipe or wrist flick"]
-    P2["Compass<br/>±35° of calibrated heading"]
-  end
-  subgraph Laptop["Laptop: one Docker container"]
-    A["Phone app<br/>HTTPS :8443, LAN"]
-    B["Laptop page<br/>HTTP :8080, localhost only"]
-    D[("/data<br/>cert, token, save folder")]
-  end
-  F[["Chosen folder<br/>inside INBOX_DIR"]]
-  P1 -- "POST /api/upload<br/>X-Flick-Token" --> A
-  P2 -. gates the send .-> P1
-  A -- "temp file, then atomic rename" --> F
-  B -- "QR code, folder choice" --> D
-  A --- D
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.png">
+  <img src="docs/assets/architecture-light.png" alt="How a photo travels: the phone browser (pair once, point within 35 degrees, swipe or flick) sends it over the same Wi-Fi with HTTPS to the phone app on port 8443 inside one Docker container on the laptop, which checks the pairing token, rate limit, size and image type, then saves it via a temp file and rename into the chosen folder inside INBOX_DIR. The laptop-only page on port 8080 shows the QR code and picks the folder; /data holds the certificate, token and folder choice.">
+</picture>
+
+The figure is `docs/architecture.html`. After editing it, re-render it to
+`docs/assets/architecture-{light,dark}.png` at 1400×640 with a device scale factor of 2, in
+the light and dark colour schemes (for example with headless Chrome or Edge).
 
 - **Two ports.** The phone talks to port 8443 over HTTPS, the only port open to the Wi-Fi.
   The laptop page runs on port 8080, which Docker publishes to `127.0.0.1` only, so phones

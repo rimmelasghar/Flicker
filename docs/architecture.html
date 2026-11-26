@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flick: how it works</title>
+<!--
+  Source of docs/assets/architecture-{light,dark}.png. After editing, re-render
+  at 1400x640 with deviceScaleFactor 2 in light and dark colour schemes.
+-->
+<style>
+  :root {
+    --bg: #f6f7f9; --surface: #fff; --surface-2: #f2f4f7; --border: #e4e7ec;
+    --text: #101828; --muted: #667085; --primary: #0a84ff; --primary-soft: #e8f2ff;
+    --ok: #12b76a; --ok-soft: #e7f8ef; --warn-soft: #fff6e5; --warn: #b54708;
+    --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, Roboto, Arial, sans-serif;
+    --mono: "Cascadia Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0b0d12; --surface: #12151c; --surface-2: #1a1e27; --border: #262b36;
+      --text: #f2f4f7; --muted: #98a2b3; --primary-soft: #0a2a4d; --ok-soft: #0d2b1e;
+      --warn-soft: #2b1d08; --warn: #fdb022;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    width: 1400px; height: 640px; padding: 36px 40px;
+    background: var(--bg); color: var(--text); font: 15px/1.4 var(--font);
+    -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 0 0 26px; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+
+  .row { display: grid; grid-template-columns: 300px 170px 470px 150px 230px; align-items: stretch; height: 486px; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+    box-shadow: 0 1px 2px rgb(16 24 40 / .05), 0 2px 6px rgb(16 24 40 / .05);
+    padding: 20px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--primary); }
+  .panel h2 { margin: 2px 0 0; font-size: 17px; font-weight: 650; }
+
+  /* phone */
+  .phone-wrap { display: flex; justify-content: center; }
+  .phone {
+    width: 112px; height: 178px; border-radius: 24px; border: 3px solid var(--text);
+    background: var(--surface-2); padding: 10px 9px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .phone .strip { display: flex; align-items: center; gap: 6px; background: var(--surface); border-radius: 8px; padding: 5px 6px; font-size: 9.5px; font-weight: 600; }
+  .gauge { width: 16px; height: 16px; border-radius: 50%; background: var(--ok-soft); display: grid; place-items: center; }
+  .gauge svg { width: 10px; height: 10px; fill: var(--ok); }
+  .photo {
+    flex: 1; border-radius: 12px; outline: 2.5px solid var(--ok); outline-offset: 3px; margin: 4px 6px 6px;
+    background: linear-gradient(150deg, #ffb066, #8e5bd8);
+    position: relative;
+  }
+  .photo::after { content: ""; position: absolute; right: 14px; top: 16px; width: 20px; height: 20px; border-radius: 50%; background: #fffbe0; }
+  .swipe { display: flex; justify-content: center; }
+  .swipe svg { width: 16px; height: 16px; fill: none; stroke: var(--muted); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+
+  .steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .steps li { display: grid; grid-template-columns: 24px 1fr; gap: 10px; font-size: 13.5px; color: var(--muted); }
+  .steps b { color: var(--text); font-weight: 600; }
+  .num { width: 24px; height: 24px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+
+  /* connectors */
+  .link { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; }
+  .wire { position: absolute; left: 6px; right: 6px; top: 50%; height: 0; border-top: 3px dashed var(--primary); }
+  .wire::after {
+    content: ""; position: absolute; right: -4px; top: -9px;
+    border-left: 13px solid var(--primary); border-top: 7.5px solid transparent; border-bottom: 7.5px solid transparent;
+  }
+  .bubble {
+    position: relative; z-index: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 8px 10px; text-align: center; font-size: 12.5px; color: var(--muted);
+    box-shadow: 0 1px 2px rgb(16 24 40 / .05);
+  }
+  .bubble b { display: block; color: var(--text); font-size: 13px; }
+  .link { gap: 22px; }
+  .link .bubble { width: 148px; }
+
+  .chip-photo {
+    position: relative; z-index: 1; width: 38px; height: 30px; border-radius: 6px;
+    background: linear-gradient(150deg, #ffb066, #8e5bd8); border: 2px solid var(--surface);
+    box-shadow: 0 4px 10px rgb(16 24 40 / .18);
+  }
+
+  /* container */
+  .container { border: 2px dashed color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary-soft) 35%, var(--bg)); }
+  .container .head { display: flex; align-items: center; justify-content: space-between; }
+  .whale { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+  .whale svg { width: 26px; height: 26px; fill: var(--primary); }
+  .box { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+  .box h3 { margin: 0 0 2px; font-size: 14.5px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .port { font: 600 11.5px var(--mono); padding: 2px 8px; border-radius: 999px; }
+  .port.lan { background: var(--primary-soft); color: var(--primary); }
+  .port.local { background: var(--warn-soft); color: var(--warn); }
+  .box p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 6px; }
+  .check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 8px; background: var(--surface-2); }
+  .check svg { width: 12px; height: 12px; fill: none; stroke: var(--ok); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+  .split { display: grid; grid-template-columns: 1fr 150px; gap: 12px; }
+  .data { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 6px; text-align: center; }
+  .data svg { width: 40px; height: 46px; }
+  .data .cyl { fill: var(--surface-2); stroke: var(--muted); stroke-width: 1.6; }
+  .data small { color: var(--muted); font-size: 11.5px; }
+  .laptop-user { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+  .laptop-user svg { width: 34px; height: 26px; flex: none; }
+  .laptop-user .lp { fill: var(--surface); stroke: var(--text); stroke-width: 1.8; }
+
+  .pairing { display: flex; align-items: center; justify-content: space-between; gap: 4px; padding: 12px 12px; }
+  .pstep { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .pstep svg { width: 20px; height: 20px; padding: 4px; border-radius: 7px; background: var(--primary-soft); fill: var(--primary); flex: none; }
+  .parrow { color: var(--muted); font-weight: 700; }
+
+  /* folder */
+  .folder-panel { align-items: center; justify-content: center; text-align: center; }
+  .folder-icon svg { width: 92px; height: 76px; }
+  .folder-icon .back { fill: #ffd27a; } .folder-icon .front { fill: #ffbe3d; }
+  .file {
+    display: flex; align-items: center; gap: 8px; text-align: left; background: var(--surface-2);
+    border-radius: 10px; padding: 8px 10px; width: 100%;
+  }
+  .file .thumb { width: 26px; height: 26px; border-radius: 5px; background: linear-gradient(150deg, #ffb066, #8e5bd8); flex: none; }
+  .file .mono { font-size: 10.5px; overflow-wrap: anywhere; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+  <h1>How a photo gets from your phone to your laptop</h1>
+  <p class="sub">Everything stays on your Wi-Fi. One Docker container on the laptop; nothing to install on the phone.</p>
+
+  <div class="row">
+    <!-- Phone -->
+    <section class="panel">
+      <div>
+        <div class="tag">Phone browser</div>
+        <h2>Pick, point, send</h2>
+      </div>
+      <div class="phone-wrap">
+        <div class="phone">
+          <div class="strip">
+            <span class="gauge"><svg viewBox="0 0 24 24"><path d="M12 3l6 8h-4v10h-4V11H6z"/></svg></span>
+            On target
+          </div>
+          <div class="photo"></div>
+          <div class="swipe"><svg viewBox="0 0 24 24"><path d="M6 14l6-6 6 6"/></svg></div>
+        </div>
+      </div>
+      <ol class="steps">
+        <li><span class="num">1</span><span><b>Pair once.</b> Scan the QR code; the token rides in the URL <span class="mono">#fragment</span>.</span></li>
+        <li><span class="num">2</span><span><b>Point.</b> The compass must be within ±35° of the calibrated laptop heading.</span></li>
+        <li><span class="num">3</span><span><b>Send.</b> Swipe the photo up, or flick the whole phone.</span></li>
+      </ol>
+    </section>
+
+    <!-- Wi-Fi link -->
+    <div class="link">
+      <div class="wire"></div>
+      <div class="bubble"><b>Same Wi-Fi</b>HTTPS, own certificate</div>
+      <div class="chip-photo"></div>
+      <div class="bubble"><span class="mono">POST /api/upload</span><br><span class="mono">X-Flick-Token</span></div>
+    </div>
+
+    <!-- Container -->
+    <section class="panel container">
+      <div class="head">
+        <div class="whale">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12.5h16.5c.8-1.5 2.3-2 3.5-1.8-.2 1-.9 1.6-1.6 1.8C19.7 17 16 20 10.5 20 6 20 2.8 17.4 2 12.5zM4 9.5h2.5V12H4zm3 0h2.5V12H7zm3 0h2.5V12H10zm-3-3h2.5V9H7zm3 0h2.5V9H10zm3 3h2.5V12H13zm-3-6h2.5V6H10z"/></svg>
+          Laptop · one Docker container
+        </div>
+      </div>
+
+      <div class="box">
+        <h3>Phone app <span class="port lan">:8443 · LAN</span></h3>
+        <p>The only port open to the Wi-Fi. Every upload passes these checks:</p>
+        <div class="checks">
+          <span class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Pairing token</span>
+          <span class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Rate limit</span>
+          <span class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>≤ 50 MB</span>
+          <span class="check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Real image (by bytes)</span>
+        </div>
+      </div>
+
+      <div class="split">
+        <div class="box">
+          <h3>Laptop page <span class="port local">:8080 · localhost</span></h3>
+          <p>Only this laptop can open it. Shows the QR code, picks the save folder, unpairs phones.</p>
+          <div class="laptop-user">
+            <svg viewBox="0 0 34 26" aria-hidden="true"><rect class="lp" x="5" y="2" width="24" height="16" rx="2"/><rect class="lp" x="1" y="19" width="32" height="4" rx="2"/></svg>
+            <span class="mono">http://localhost:8080</span>
+          </div>
+        </div>
+        <div class="box data">
+          <svg viewBox="0 0 40 46" aria-hidden="true">
+            <path class="cyl" d="M2 8c0-4 36-4 36 0v30c0 4-36 4-36 0z"/>
+            <ellipse class="cyl" cx="20" cy="8" rx="18" ry="5"/>
+          </svg>
+          <b class="mono">/data</b>
+          <small>certificate · token · save folder</small>
+        </div>
+      </div>
+
+      <div class="box pairing">
+        <span class="pstep"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/></svg>QR on laptop</span>
+        <span class="parrow">→</span>
+        <span class="pstep"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/></svg>Phone scans once</span>
+        <span class="parrow">→</span>
+        <span class="pstep"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="4"/><path d="M12 11h9v3h-2v2h-3v-2h-4z"/></svg>Token on each photo</span>
+      </div>
+    </section>
+
+    <!-- Save link -->
+    <div class="link">
+      <div class="wire"></div>
+      <div class="bubble"><b>Saved safely</b>temp file, then renamed</div>
+      <div class="chip-photo"></div>
+      <div class="bubble">never overwrites,<br>never half-written</div>
+    </div>
+
+    <!-- Folder -->
+    <section class="panel folder-panel">
+      <div>
+        <div class="tag">Your folder</div>
+        <h2>Inside INBOX_DIR</h2>
+      </div>
+      <div class="folder-icon">
+        <svg viewBox="0 0 92 76" aria-hidden="true">
+          <path class="back" d="M4 10a6 6 0 0 1 6-6h22l8 8h42a6 6 0 0 1 6 6v48a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z"/>
+          <path class="front" d="M4 24a6 6 0 0 1 6-6h72a6 6 0 0 1 6 6v42a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6z"/>
+        </svg>
+      </div>
+      <div class="file">
+        <span class="thumb"></span>
+        <span class="mono">20261126-171652-IMG_0001.jpg</span>
+      </div>
+      <p class="muted">Original bytes, EXIF kept. Pick the folder on the laptop page.</p>
+    </section>
+  </div>
+</body>
+</html>
