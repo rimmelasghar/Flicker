@@ -2,14 +2,16 @@
 
 import asyncio
 import logging
+from typing import Annotated
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, File, UploadFile
 
 from server import __version__
 from server.auth import TokenStore, token_guard
 from server.certs import ensure_certificate
 from server.config import PHONE_PORT, Settings, load_settings
+from server.upload import save_upload
 
 
 def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
@@ -26,6 +28,11 @@ def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
     @protected.get("/ping")
     def ping() -> dict[str, bool | str]:
         return {"ok": True, "host": settings.host_ip, "version": __version__}
+
+    @protected.post("/upload")
+    def upload(file: Annotated[UploadFile, File()]) -> dict[str, bool | str | int]:
+        saved = save_upload(file.file, file.filename, settings.inbox_dir)
+        return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
     app.include_router(protected)
     return app
