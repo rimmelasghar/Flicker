@@ -23,6 +23,8 @@ class Settings:
     pgid: int = 1000
     data_dir: Path = Path("/data")
     inbox_dir: Path = Path("/inbox")
+    # Host path of the inbox (INBOX_DIR), only for showing it to the user.
+    inbox_label: str = ""
 
     @property
     def max_file_bytes(self) -> int:
@@ -58,4 +60,5 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         angle_tolerance=_int(env, "ANGLE_TOLERANCE", 35, 1, 180),
         puid=_int(env, "PUID", 1000, 0, 2**32 - 1),
         pgid=_int(env, "PGID", 1000, 0, 2**32 - 1),
+        inbox_label=env.get("INBOX_DIR", "").strip(),
     )

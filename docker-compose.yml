@@ -9,6 +9,8 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      # Passed through only to show the save location on the pair page.
+      INBOX_DIR: ${INBOX_DIR}
       MAX_FILE_MB: ${MAX_FILE_MB:-50}
       ANGLE_TOLERANCE: ${ANGLE_TOLERANCE:-35}
       PUID: ${PUID:-1000}

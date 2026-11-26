@@ -11,10 +11,12 @@ import logging
 import segno
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from server.auth import TokenStore
 from server.config import PAIR_PORT, PHONE_PORT, Settings
+from server.folders import FolderStore
 
 log = logging.getLogger("flick")
 
@@ -65,9 +67,53 @@ def pairing_url(settings: Settings, token: str) -> str:
     return f"https://{settings.host_ip}:{PHONE_PORT}/#t={token}"
 
 
-def create_pair_app(settings: Settings, tokens: TokenStore) -> FastAPI:
+class NewFolder(BaseModel):
+    parent: str = ""
+    name: str
+
+
+class FolderChoice(BaseModel):
+    path: str
+
+
+def create_pair_app(
+    settings: Settings, tokens: TokenStore, folders: FolderStore | None = None
+) -> FastAPI:
     app = FastAPI(title="Flick pairing", docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=LOCAL_HOSTS)
+    folders = folders or FolderStore(settings.inbox_dir, settings.data_dir)
+
+    def display(relative: str) -> str:
+        """Host path for the user, e.g. C:/Users/me/Desktop/Photos."""
+        base = settings.inbox_label.rstrip("/\\") or "INBOX_DIR"
+        return f"{base}/{relative}" if relative else base
+
+    @app.get("/api/folders")
+    def list_folders(path: str = "") -> dict[str, object]:
+        relative = folders.resolve(path).relative_to(folders.root).as_posix()
+        relative = "" if relative == "." else relative
+        return {
+            "path": relative,
+            "display": display(relative),
+            "folders": folders.list(relative),
+            "selected": folders.relative,
+        }
+
+    @app.post("/api/folders")
+    def create_folder(body: NewFolder, request: Request) -> dict[str, str]:
+        _reject_cross_site(request)
+        return {"path": folders.create(body.parent, body.name)}
+
+    @app.get("/api/save-folder")
+    def get_save_folder() -> dict[str, str]:
+        return {"path": folders.relative, "display": display(folders.relative)}
+
+    @app.put("/api/save-folder")
+    def set_save_folder(body: FolderChoice, request: Request) -> dict[str, str]:
+        _reject_cross_site(request)
+        relative = folders.choose(body.path)
+        log.info("photos will be saved to %s", display(relative))
+        return {"path": relative, "display": display(relative)}
 
     @app.get("/pair", response_class=HTMLResponse)
     def pair() -> HTMLResponse:

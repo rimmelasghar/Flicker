@@ -79,9 +79,11 @@ async def serve(settings: Settings) -> None:
     cert_path, key_path = ensure_certificate(settings.data_dir, settings.host_ip)
     tokens = TokenStore(settings.data_dir)
     clean_temp(settings.inbox_dir)
+    # One store for both listeners: a choice on the laptop applies at once.
+    folders = FolderStore(settings.inbox_dir, settings.data_dir)
     phone = uvicorn.Server(
         uvicorn.Config(
-            create_phone_app(settings, tokens),
+            create_phone_app(settings, tokens, folders=folders),
             host="0.0.0.0",
             port=PHONE_PORT,
             ssl_certfile=cert_path,
@@ -89,7 +91,7 @@ async def serve(settings: Settings) -> None:
         )
     )
     pair = uvicorn.Server(
-        uvicorn.Config(create_pair_app(settings, tokens), host="0.0.0.0", port=PAIR_PORT)
+        uvicorn.Config(create_pair_app(settings, tokens, folders), host="0.0.0.0", port=PAIR_PORT)
     )
     await asyncio.gather(phone.serve(), pair.serve())
 
