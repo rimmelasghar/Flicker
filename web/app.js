@@ -122,9 +122,29 @@ function resetCard() {
   card.style.transform = "";
 }
 
-function onFlick() {
-  resetCard();
+const FLY_MS = 280;
+
+// Animate the card up and off the screen; resolves when it is gone.
+function flyAway(dx) {
+  const card = $("card");
+  const distance = window.innerHeight + card.offsetHeight;
+  card.style.transition = `transform ${FLY_MS}ms cubic-bezier(.3,.6,.4,1), opacity ${FLY_MS}ms`;
+  card.style.transform = `translate(${dx * 0.5}px, ${-distance}px) rotate(${dx * 0.05}deg)`;
+  card.style.opacity = "0";
+  return new Promise((resolve) => setTimeout(resolve, FLY_MS));
+}
+
+function clearCard() {
+  const card = $("card");
+  card.style.transition = "none";
+  card.style.transform = "";
+  card.style.opacity = "";
+}
+
+async function onFlick(dx) {
+  await flyAway(dx);
   setPhoto(null);
+  clearCard();
 }
 
 async function init() {

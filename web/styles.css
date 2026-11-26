@@ -124,4 +124,8 @@ body {
   cursor: pointer;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .card { transition-duration: 1ms !important; }
+}
+
 [hidden] { display: none !important; }
