@@ -126,7 +126,7 @@ function resetCard() {
   card.style.transform = "";
 }
 
-const FLY_MS = 280;
+const FLY_MS = 220;
 
 // Animate the card up and off the screen; resolves when it is gone.
 function flyAway(dx) {

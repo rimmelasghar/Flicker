@@ -1,11 +1,11 @@
 // Upward swipe ("flick") detection on the photo card, using Pointer Events.
 
 // A flick is a mostly vertical upward move that either travels far enough
-// or is released fast enough.
-const MIN_DISTANCE_FRACTION = 0.22; // of the viewport height
+// or is released fast enough (values from the design doc).
+const MIN_DISTANCE_FRACTION = 0.25; // of the viewport height
 const MIN_FAST_DISTANCE = 40; // px; a fast flick must still move this far
-const MIN_VELOCITY = 0.5; // px per ms, upward
-const VELOCITY_WINDOW = 80; // ms of recent samples used for velocity
+const MIN_VELOCITY = 0.8; // px per ms, upward
+const VELOCITY_WINDOW = 100; // ms of recent samples used for velocity
 
 export function isFlick({ dx, dy, vy, viewportHeight }) {
   if (dy >= 0 || Math.abs(dx) > Math.abs(dy)) return false;
