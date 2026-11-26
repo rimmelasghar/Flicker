@@ -9,11 +9,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
+import filetype
 from fastapi import HTTPException, status
 
 CHUNK = 1024 * 1024
 MAX_STEM = 80
 MAX_COLLISIONS = 1000
+HEAD_BYTES = 512  # enough for every allowed format's signature
+
+# filetype extension -> extension used for the saved file.
+ALLOWED = {"jpg": "jpg", "png": "png", "apng": "png", "gif": "gif", "webp": "webp", "heic": "heic"}
+# ISO-BMFF brands of HEIF stills that filetype does not report as heic.
+HEIF_BRANDS = {"heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"}
 
 log = logging.getLogger("flick")
 
@@ -24,19 +31,33 @@ class SavedFile:
     size: int
 
 
-def split_name(original: str | None) -> tuple[str, str]:
-    """Return a safe (stem, ext) from an uploaded filename.
+def safe_stem(original: str | None) -> str:
+    """Return a safe file stem from an uploaded filename.
 
-    Drops any path components (both / and \\), then keeps only letters,
-    digits, '-' and '_'.
+    Drops any path components (both / and \\) and the extension, then
+    keeps only letters, digits, '-' and '_'.
     """
     base = re.split(r"[\\/]", original or "")[-1]
-    stem, dot, ext = base.rpartition(".")
+    stem, dot, _ = base.rpartition(".")
     if not dot:
-        stem, ext = ext, ""
-    stem = re.sub(r"[^A-Za-z0-9_-]", "", stem)[:MAX_STEM] or "photo"
-    ext = re.sub(r"[^A-Za-z0-9]", "", ext).lower()[:8] or "bin"
-    return stem, ext
+        stem = base
+    return re.sub(r"[^A-Za-z0-9_-]", "", stem)[:MAX_STEM] or "photo"
+
+
+def _heif_brand(head: bytes) -> bool:
+    if len(head) < 16 or head[4:8] != b"ftyp":
+        return False
+    size = min(int.from_bytes(head[0:4], "big"), len(head))
+    brands = {head[8:12]} | {head[i : i + 4] for i in range(16, size - 3, 4)}
+    return any(b.decode("latin-1") in HEIF_BRANDS for b in brands) and b"avif" not in brands
+
+
+def image_extension(head: bytes) -> str | None:
+    """Extension for an allowed image judged by its first bytes, else None."""
+    kind = filetype.guess(head)
+    if kind is not None and kind.extension in ALLOWED:
+        return ALLOWED[kind.extension]
+    return "heif" if _heif_brand(head) else None
 
 
 def _open_unique(inbox: Path, base: str, ext: str) -> tuple[Path, BinaryIO]:
@@ -50,7 +71,15 @@ def _open_unique(inbox: Path, base: str, ext: str) -> tuple[Path, BinaryIO]:
 
 
 def save_upload(source: BinaryIO, original_name: str | None, inbox: Path) -> SavedFile:
-    stem, ext = split_name(original_name)
+    # Judge the type by the bytes, never by the name or Content-Type.
+    ext = image_extension(source.read(HEAD_BYTES))
+    source.seek(0)
+    if ext is None:
+        raise HTTPException(
+            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            "only JPEG, PNG, HEIC/HEIF, WebP and GIF images are accepted",
+        )
+    stem = safe_stem(original_name)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     path, target = _open_unique(inbox, f"{stamp}-{stem}", ext)
     try:
