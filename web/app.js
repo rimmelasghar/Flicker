@@ -33,7 +33,8 @@ const state = {
 const WRIST_KEY = "flick.wrist";
 const HEADING_LOG_MS = 1500;
 // Direction is judged from the heading this long before the jolt.
-const WRIST_LOOKBACK_MS = 400;
+// The flick is reported ~350 ms after its peak, so look back past both.
+const WRIST_LOOKBACK_MS = 900;
 
 const CALIBRATION_KEY = "flick.calibration";
 // ± degrees from the calibrated laptop heading that still count as
