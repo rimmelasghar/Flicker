@@ -19,6 +19,15 @@ export function circularMean(angles) {
   return normalize(toDeg(Math.atan2(y, x)));
 }
 
+// Readings follow the top edge of the device. When the screen is rotated,
+// the user points with the top of the screen instead, which is this many
+// degrees clockwise from the device top. (landscape with the device top
+// to the left = 90: device heading 270 + 90 = facing 0.)
+export function screenAngle() {
+  const angle = window.screen?.orientation?.angle ?? window.orientation ?? 0;
+  return normalize(Number(angle) || 0);
+}
+
 // Returns a function that takes a raw reading and gives the smoothed heading.
 export function createSmoother(windowMs = SMOOTH_MS) {
   let samples = [];
@@ -47,7 +56,7 @@ export function stopCompass() {
 export async function startCompass(onReading) {
   stopCompass();
   const smooth = createSmoother();
-  const onHeading = (raw) => onReading(smooth(raw));
+  const onHeading = (raw) => onReading(smooth(normalize(raw + screenAngle())));
   if (!window.isSecureContext || !window.DeviceOrientationEvent) return "unsupported";
 
   if (typeof window.DeviceOrientationEvent.requestPermission === "function") {
