@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -14,18 +16,75 @@ def test_pairing_url_carries_token_in_fragment(settings, tokens):
     assert url == f"https://192.168.1.50:8443/#t={tokens.current}"
 
 
-def test_pair_page_shows_qr_code(pair_client):
+def test_pair_page_is_served(pair_client):
     response = pair_client.get("/pair")
     assert response.status_code == 200
-    assert "<svg" in response.text
-    assert "viewBox" in response.text
-    assert "https://192.168.1.50:8443/" in response.text
+    assert response.headers["content-type"].startswith("text/html")
+    assert "/pair-assets/pair.js" in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert pair_client.get("/pair-assets/pair.css").status_code == 200
+
+
+def test_root_redirects_to_pair_page(pair_client):
+    response = pair_client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 307)
+    assert response.headers["location"] == "/pair"
+
+
+def test_pair_info_has_qr_code_and_address(pair_client):
+    response = pair_client.get("/api/pair")
+    body = response.json()
+    assert "<svg" in body["qr_svg"]
+    assert "viewBox" in body["qr_svg"]
+    assert body["phone_url"] == "https://192.168.1.50:8443/"
+    assert body["host"] == "192.168.1.50"
     assert response.headers["cache-control"] == "no-store"
 
 
 def test_pair_page_rejects_foreign_host_header(settings, tokens):
     client = TestClient(create_pair_app(settings, tokens), base_url="http://evil.example:8080")
     assert client.get("/pair").status_code == 400
+
+
+@pytest.fixture
+def folder_client(settings, tokens):
+    (settings.inbox_dir / "Photos").mkdir()
+    (settings.inbox_dir / "Work").mkdir()
+    labelled = replace(settings, inbox_label="C:/Users/me/Desktop")
+    return TestClient(create_pair_app(labelled, tokens), base_url="http://localhost:8080")
+
+
+def test_folder_listing(folder_client):
+    body = folder_client.get("/api/folders").json()
+    assert body == {
+        "path": "",
+        "display": "C:/Users/me/Desktop",
+        "folders": ["Photos", "Work"],
+        "selected": "",
+    }
+
+
+def test_select_and_create_folder(folder_client, settings):
+    created = folder_client.post("/api/folders", json={"parent": "Photos", "name": "Flick"})
+    assert created.json() == {"path": "Photos/Flick"}
+    chosen = folder_client.put("/api/save-folder", json={"path": "Photos/Flick"})
+    assert chosen.json() == {"path": "Photos/Flick", "display": "C:/Users/me/Desktop/Photos/Flick"}
+    assert folder_client.get("/api/save-folder").json()["path"] == "Photos/Flick"
+
+
+def test_folder_api_refuses_escape(folder_client):
+    assert folder_client.get("/api/folders", params={"path": "../.."}).status_code == 400
+    assert folder_client.put("/api/save-folder", json={"path": ".."}).status_code == 400
+
+
+def test_folder_changes_refuse_cross_site(folder_client):
+    evil = {"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"}
+    assert (
+        folder_client.put("/api/save-folder", json={"path": "Work"}, headers=evil).status_code
+        == 403
+    )
+    response = folder_client.post("/api/folders", json={"name": "x"}, headers=evil)
+    assert response.status_code == 403
 
 
 def test_rotate_changes_token(pair_client, tokens):

@@ -15,6 +15,7 @@ from server import __version__
 from server.auth import TokenStore, token_guard
 from server.certs import ensure_certificate
 from server.config import PAIR_PORT, PHONE_PORT, Settings, load_settings
+from server.folders import FolderStore
 from server.pairing import create_pair_app
 from server.ratelimit import RateLimiter
 from server.upload import clean_temp, save_upload
@@ -23,11 +24,15 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_phone_app(
-    settings: Settings, tokens: TokenStore, limiter: RateLimiter | None = None
+    settings: Settings,
+    tokens: TokenStore,
+    limiter: RateLimiter | None = None,
+    folders: FolderStore | None = None,
 ) -> FastAPI:
     """App served to the phone over HTTPS on the LAN."""
     app = FastAPI(title="Flick", docs_url=None, redoc_url=None, openapi_url=None)
     limiter = limiter or RateLimiter()
+    folders = folders or FolderStore(settings.inbox_dir, settings.data_dir)
 
     @app.middleware("http")
     async def rate_limit(
@@ -55,7 +60,13 @@ def create_phone_app(
 
     @protected.post("/upload")
     def upload(file: Annotated[UploadFile, File()]) -> dict[str, bool | str | int]:
-        saved = save_upload(file.file, file.filename, settings.inbox_dir, settings.max_file_bytes)
+        saved = save_upload(
+            file.file,
+            file.filename,
+            settings.inbox_dir,
+            settings.max_file_bytes,
+            folders.destination(),
+        )
         return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
     app.include_router(protected)
@@ -68,9 +79,11 @@ async def serve(settings: Settings) -> None:
     cert_path, key_path = ensure_certificate(settings.data_dir, settings.host_ip)
     tokens = TokenStore(settings.data_dir)
     clean_temp(settings.inbox_dir)
+    # One store for both listeners: a choice on the laptop applies at once.
+    folders = FolderStore(settings.inbox_dir, settings.data_dir)
     phone = uvicorn.Server(
         uvicorn.Config(
-            create_phone_app(settings, tokens),
+            create_phone_app(settings, tokens, folders=folders),
             host="0.0.0.0",
             port=PHONE_PORT,
             ssl_certfile=cert_path,
@@ -78,7 +91,7 @@ async def serve(settings: Settings) -> None:
         )
     )
     pair = uvicorn.Server(
-        uvicorn.Config(create_pair_app(settings, tokens), host="0.0.0.0", port=PAIR_PORT)
+        uvicorn.Config(create_pair_app(settings, tokens, folders), host="0.0.0.0", port=PAIR_PORT)
     )
     await asyncio.gather(phone.serve(), pair.serve())
 

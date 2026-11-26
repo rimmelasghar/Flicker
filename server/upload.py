@@ -118,8 +118,15 @@ def _copy_limited(source: BinaryIO, target: BinaryIO, max_bytes: int) -> int:
 
 
 def save_upload(
-    source: BinaryIO, original_name: str | None, inbox: Path, max_bytes: int
+    source: BinaryIO,
+    original_name: str | None,
+    inbox: Path,
+    max_bytes: int,
+    destination: Path | None = None,
 ) -> SavedFile:
+    """Save into destination (a folder inside the inbox; default the inbox).
+    The temp file always lives in the inbox, on the same filesystem."""
+    destination = destination or inbox
     # Cheap early check when the size is known; the copy enforces it anyway.
     source.seek(0, 2)
     if source.tell() > max_bytes:
@@ -141,12 +148,13 @@ def save_upload(
         tmp_dir.mkdir(exist_ok=True)
         with tmp.open("xb") as target:
             size = _copy_limited(source, target, max_bytes)
-        path = _publish(tmp, inbox, f"{stamp}-{stem}", ext)
+        path = _publish(tmp, destination, f"{stamp}-{stem}", ext)
     except OSError as exc:
         if exc.errno == errno.ENOSPC:
             raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "disk full") from exc
         raise
     finally:
         tmp.unlink(missing_ok=True)
-    log.info("received %s (%d KB)", path.name, round(size / 1024))
+    shown = path.relative_to(inbox).as_posix() if path.is_relative_to(inbox) else path.name
+    log.info("received %s (%d KB)", shown, round(size / 1024))
     return SavedFile(name=path.name, size=size)
