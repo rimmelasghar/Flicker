@@ -21,17 +21,20 @@ function velocity(samples) {
   return dt > 0 ? (last.y - first.y) / dt : 0;
 }
 
-// Physical "wrist flick": one sharp forward snap of the whole phone
-// towards the laptop. Shaking, putting the phone down and walking must
-// not count, so a flick needs all of:
+// Physical "wrist flick": one sharp snap of the whole phone towards the
+// laptop. Shaking, putting the phone down and walking must not count, so
+// a flick needs all of:
 //   1. the phone held still just before (aiming),
-//   2. a fast pitch (top edge tipping) with a sharp jolt,
+//   2. a fast turn about one main axis with a sharp jolt,
 //   3. no strong swing back afterwards (a shake reverses, a flick stops).
-const WRIST_ROTATION = 300; // deg/s, peak pitch rate
-const WRIST_ACCEL = 15; // m/s², peak acceleration without gravity
+// Any axis is accepted: iPhone Safari reports a forward wrist flick in
+// rotationRate.gamma, not beta as the spec's axis naming suggests.
+const AXES = ["alpha", "beta", "gamma"];
+const WRIST_ROTATION = 300; // deg/s, peak rate about the main axis
+const WRIST_ACCEL = 12; // m/s², peak acceleration without gravity
 const WRIST_WINDOW = 250; // ms; both peaks must fall inside this window
-const PITCH_SHARE = 1.5; // pitch must beat the other two axes by this factor
-const QUIET_ROTATION = 80; // deg/s; "held still" means below this ...
+const AXIS_SHARE = 1.5; // main axis must beat the other two by this factor
+const QUIET_ROTATION = 100; // deg/s; "held still" means below this ...
 const QUIET_ACCEL = 4; // ... and below this m/s²
 const QUIET_MS = 300; // for this long before the flick starts
 const SETTLE_MS = 350; // watch this long after the peak for a swing back
@@ -46,17 +49,18 @@ const peak = (list, pick) => Math.max(0, ...list.map(pick));
 // Samples are { t, alpha, beta, gamma, rot, acc } (rotation in deg/s).
 export function createWristDetector() {
   let history = [];
-  let pending = null; // { t, sign, peak } while watching for a swing back
+  let pending = null; // { t, axis, sign, peak } while watching for a swing back
   let blockedUntil = -Infinity;
 
   const settle = (sample) => {
-    const opposite = Math.sign(sample.beta) === -pending.sign;
-    if (opposite && Math.abs(sample.beta) > REVERSAL * pending.peak) {
+    const rate = sample[pending.axis];
+    const opposite = Math.sign(rate) === -pending.sign;
+    if (opposite && Math.abs(rate) > REVERSAL * pending.peak) {
       pending = null; // swung back: a shake, not a flick
       blockedUntil = sample.t + WRIST_COOLDOWN;
       return false;
     }
-    if (!opposite) pending.peak = Math.max(pending.peak, Math.abs(sample.beta));
+    if (!opposite) pending.peak = Math.max(pending.peak, Math.abs(rate));
     if (sample.t - pending.t < SETTLE_MS) return false;
     pending = null;
     blockedUntil = sample.t + WRIST_COOLDOWN;
@@ -70,10 +74,12 @@ export function createWristDetector() {
     if (sample.t < blockedUntil) return false;
 
     const recent = history.filter((h) => sample.t - h.t <= WRIST_WINDOW);
-    const pitch = peak(recent, (h) => Math.abs(h.beta));
-    const other = peak(recent, (h) => Math.max(Math.abs(h.alpha), Math.abs(h.gamma)));
-    if (pitch < WRIST_ROTATION || peak(recent, (h) => h.acc) < WRIST_ACCEL) return false;
-    if (pitch < PITCH_SHARE * other) return false;
+    const peaks = AXES.map((axis) => peak(recent, (h) => Math.abs(h[axis])));
+    const main = peaks.indexOf(Math.max(...peaks));
+    const axis = AXES[main];
+    const other = Math.max(...peaks.filter((_, i) => i !== main));
+    if (peaks[main] < WRIST_ROTATION || peak(recent, (h) => h.acc) < WRIST_ACCEL) return false;
+    if (peaks[main] < AXIS_SHARE * other) return false;
 
     const moving = (h) => h.rot > QUIET_ROTATION || h.acc > QUIET_ACCEL;
     const onset = (recent.find(moving) ?? sample).t;
@@ -81,8 +87,8 @@ export function createWristDetector() {
     const heldLongEnough = before.length > 0 && onset - before[0].t >= QUIET_MS * 0.8;
     if (!heldLongEnough || before.some(moving)) return false;
 
-    const top = recent.reduce((a, b) => (Math.abs(b.beta) > Math.abs(a.beta) ? b : a));
-    pending = { t: top.t, sign: Math.sign(top.beta), peak: pitch };
+    const top = recent.reduce((a, b) => (Math.abs(b[axis]) > Math.abs(a[axis]) ? b : a));
+    pending = { t: top.t, axis, sign: Math.sign(top[axis]), peak: peaks[main] };
     return false;
   };
 }
