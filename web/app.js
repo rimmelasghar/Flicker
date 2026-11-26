@@ -1,7 +1,7 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
 import { attachSwipe } from "./gesture.js";
-import { startCompass } from "./heading.js";
+import { angleDiff, startCompass } from "./heading.js";
 
 const TOKEN_KEY = "flick.token";
 const TOKEN_HEADER = "X-Flick-Token";
@@ -24,6 +24,19 @@ const state = {
 };
 
 const CALIBRATION_KEY = "flick.calibration";
+// ± degrees from the calibrated laptop heading that still count as
+// pointing at it (design doc default).
+const ANGLE_TOLERANCE = 35;
+
+// Why a flick may not send right now, or null when it may.
+function directionProblem() {
+  if (state.compass !== "on") return "Enable the compass first.";
+  if (state.heading === null) return "Waiting for the compass…";
+  if (!state.calibration) return "Calibrate first: point at the laptop and tap Calibrate.";
+  const off = angleDiff(state.heading, state.calibration.heading);
+  if (off > ANGLE_TOLERANCE) return `Point at the laptop (${Math.round(off)}° off).`;
+  return null;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -246,6 +259,13 @@ async function upload(file) {
   return res.json();
 }
 
+// A real flick while not pointing at the laptop: spring back and say why.
+function onBlocked() {
+  resetCard();
+  setStatus(directionProblem() ?? "Try again.", "err");
+  navigator.vibrate?.([20, 60, 20]);
+}
+
 async function onFlick(dx) {
   if (state.sending || !state.photo) return;
   state.sending = true;
@@ -284,7 +304,13 @@ async function init() {
   state.calibration = loadCalibration();
   // Android grants orientation without a tap, so try straight away.
   enableCompass({ auto: true });
-  attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
+  attachSwipe($("card"), {
+    onDrag: moveCard,
+    onFlick,
+    onCancel: resetCard,
+    allow: () => directionProblem() === null,
+    onBlocked,
+  });
   state.token = takeTokenFromLink() ?? storeGet(TOKEN_KEY);
   render();
   await checkPairing();

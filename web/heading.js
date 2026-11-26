@@ -8,6 +8,12 @@ const toRad = (deg) => (deg * Math.PI) / 180;
 const toDeg = (rad) => (rad * 180) / Math.PI;
 export const normalize = (deg) => ((deg % 360) + 360) % 360;
 
+// Smallest angle between two headings, 0..180 (wraps across 0/360).
+export function angleDiff(a, b) {
+  const d = normalize(a - b);
+  return d > 180 ? 360 - d : d;
+}
+
 // Mean of angles on a circle: 359 and 1 average to 0, not 180.
 export function circularMean(angles) {
   let x = 0;

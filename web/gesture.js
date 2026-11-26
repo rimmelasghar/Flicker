@@ -21,9 +21,11 @@ function velocity(samples) {
   return dt > 0 ? (last.y - first.y) / dt : 0;
 }
 
-// Calls onDrag(dx, dy) while the finger moves, then either onFlick(dx, dy)
-// or onCancel() when it lifts. Returns a function that detaches the handlers.
-export function attachSwipe(el, { onDrag, onFlick, onCancel }) {
+// Calls onDrag(dx, dy) while the finger moves, then when it lifts either
+// onFlick(dx, dy), onBlocked() for a flick that allow() refused (e.g. the
+// phone is not pointing at the laptop), or onCancel().
+// Returns a function that detaches the handlers.
+export function attachSwipe(el, { onDrag, onFlick, onCancel, allow = () => true, onBlocked }) {
   let start = null;
   let samples = [];
 
@@ -51,8 +53,9 @@ export function attachSwipe(el, { onDrag, onFlick, onCancel }) {
       viewportHeight: window.innerHeight,
     };
     start = null;
-    if (isFlick(swipe)) onFlick(swipe.dx, swipe.dy);
-    else onCancel();
+    if (!isFlick(swipe)) onCancel();
+    else if (allow()) onFlick(swipe.dx, swipe.dy);
+    else (onBlocked ?? onCancel)();
   };
 
   const cancel = (e) => {
