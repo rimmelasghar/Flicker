@@ -20,4 +20,4 @@ USER flick
 
 EXPOSE 8443 8080
 
-CMD ["python", "-m", "uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8443"]
+CMD ["python", "-m", "server.main"]
