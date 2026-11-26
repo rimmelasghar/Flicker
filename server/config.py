@@ -18,6 +18,7 @@ class ConfigError(ValueError):
 class Settings:
     host_ip: str
     max_file_mb: int = 50
+    max_video_mb: int = 2048
     angle_tolerance: int = 35
     puid: int = 1000
     pgid: int = 1000
@@ -29,6 +30,10 @@ class Settings:
     @property
     def max_file_bytes(self) -> int:
         return self.max_file_mb * 1024 * 1024
+
+    @property
+    def max_video_bytes(self) -> int:
+        return self.max_video_mb * 1024 * 1024
 
 
 def _int(env: Mapping[str, str], name: str, default: int, low: int, high: int) -> int:
@@ -57,6 +62,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     return Settings(
         host_ip=host_ip,
         max_file_mb=_int(env, "MAX_FILE_MB", 50, 1, 10_000),
+        max_video_mb=_int(env, "MAX_VIDEO_MB", 2048, 1, 100_000),
         angle_tolerance=_int(env, "ANGLE_TOLERANCE", 35, 1, 180),
         puid=_int(env, "PUID", 1000, 0, 2**32 - 1),
         pgid=_int(env, "PGID", 1000, 0, 2**32 - 1),
