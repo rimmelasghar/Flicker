@@ -28,8 +28,14 @@ const CALIBRATION_KEY = "flick.calibration";
 // pointing at it (design doc default).
 const ANGLE_TOLERANCE = 35;
 
+// How long to wait for a first reading before giving up on the compass.
+const COMPASS_TIMEOUT_MS = 2000;
+// Compass states in which Flick falls back to swipe-only sending.
+const SWIPE_ONLY = new Set(["unsupported", "denied", "nodata"]);
+
 // Why a flick may not send right now, or null when it may.
 function directionProblem() {
+  if (SWIPE_ONLY.has(state.compass)) return null;
   if (state.compass !== "on") return "Enable the compass first.";
   if (state.heading === null) return "Waiting for the compass…";
   if (!state.calibration) return "Calibrate first: point at the laptop and tap Calibrate.";
@@ -124,8 +130,9 @@ function render() {
 
 const COMPASS_TEXT = {
   off: "Compass off",
-  denied: "Compass permission denied",
-  unsupported: "No compass on this browser",
+  denied: "Compass not allowed: swipe-only, no direction check",
+  unsupported: "No compass on this browser: swipe-only, no direction check",
+  nodata: "No compass data: swipe-only, no direction check",
 };
 
 function renderDirection() {
@@ -139,7 +146,7 @@ function renderDirection() {
   $("dir-text").textContent = text;
   $("dir-dot").className = `dot ${inRange ? "ok" : ""}`;
   $("card").classList.toggle("in-range", inRange);
-  $("compass-btn").hidden = on || state.compass === "unsupported";
+  $("compass-btn").hidden = on || state.compass === "unsupported" || state.compass === "nodata";
   $("calibrate-btn").hidden = !on || state.calibrating;
   $("calibrate-btn").textContent = state.calibration ? "Re-calibrate" : "Calibrate";
   $("cal-heading").textContent = reading === null ? "–" : `${reading}°`;
@@ -156,6 +163,12 @@ function pointingText() {
 
 function onHeading(degrees) {
   state.heading = degrees;
+  if (state.compass === "nodata") {
+    // Readings arrived late after all: turn the direction check back on.
+    state.compass = "on";
+    render();
+    return;
+  }
   renderDirection();
 }
 
@@ -168,6 +181,17 @@ async function enableCompass({ auto = false } = {}) {
   // First time with a working compass: go straight to calibration.
   if (state.compass === "on" && !state.calibration && !auto) state.calibrating = true;
   render();
+  if (state.compass === "on") {
+    // Some browsers accept the listener but never deliver a heading
+    // (laptops, no magnetometer): fall back to swipe-only.
+    setTimeout(() => {
+      if (state.compass === "on" && state.heading === null) {
+        state.compass = "nodata";
+        state.calibrating = false;
+        render();
+      }
+    }, COMPASS_TIMEOUT_MS);
+  }
 }
 
 function loadCalibration() {
