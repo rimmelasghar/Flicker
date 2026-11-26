@@ -358,6 +358,26 @@ function setStatus(text, tone = "") {
   const el = $("status");
   el.textContent = text;
   el.className = `status ${tone}`;
+  showErrorActions(null);
+}
+
+// After a failed upload: "retry" when trying again can help (network,
+// busy, disk full), "skip" when this photo can never be sent (too large,
+// wrong type), null to hide both.
+function showErrorActions(kind) {
+  $("error-actions").hidden = kind === null;
+  $("retry-btn").hidden = kind !== "retry";
+  $("skip-btn").hidden = kind === null;
+}
+
+function retry() {
+  // An explicit tap: send the top photo again without another flick.
+  onFlick(0);
+}
+
+function skip() {
+  setStatus("Skipped.");
+  showNext();
 }
 
 async function upload(file) {
@@ -406,6 +426,8 @@ async function onFlick(dx) {
     }
     const offline = error instanceof TypeError || error.name === "TimeoutError";
     setStatus(offline ? "Laptop unreachable. Same Wi-Fi?" : error.message, "err");
+    if (error.status === 413 || error.status === 415) showErrorActions("skip");
+    else if (error.status !== 401) showErrorActions("retry");
   } finally {
     state.sending = false;
   }
@@ -413,6 +435,8 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
+  $("retry-btn").addEventListener("click", retry);
+  $("skip-btn").addEventListener("click", skip);
   // One tap asks for both sensors: on iPhone each requestPermission call
   // must start inside the tap, before any await.
   $("compass-btn").addEventListener("click", () => {

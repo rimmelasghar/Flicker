@@ -206,4 +206,17 @@ body {
   .card { transition-duration: 1ms !important; }
 }
 
+.error-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 22rem;
+}
+
+.button.secondary {
+  background: var(--surface);
+  color: var(--accent);
+  padding: 10px;
+}
+
 [hidden] { display: none !important; }

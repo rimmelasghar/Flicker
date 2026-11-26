@@ -48,6 +48,10 @@
 
   <footer class="bar bottom">
     <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="error-actions" class="error-actions" hidden>
+      <button id="retry-btn" class="button secondary" type="button">Retry</button>
+      <button id="skip-btn" class="button secondary" type="button">Skip this photo</button>
+    </div>
     <label id="pick" class="button" hidden>
       Choose photos
       <input id="file-input" type="file" accept="image/*" multiple hidden>
