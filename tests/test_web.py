@@ -10,7 +10,13 @@ def test_root_serves_phone_page_without_token(phone_client):
 
 @pytest.mark.parametrize(
     ("path", "mime"),
-    [("/app.js", "text/javascript"), ("/styles.css", "text/css")],
+    [
+        ("/app.js", "text/javascript"),
+        ("/styles.css", "text/css"),
+        ("/manifest.json", "application/json"),
+        ("/icons/icon-192.png", "image/png"),
+        ("/icons/apple-touch-icon.png", "image/png"),
+    ],
 )
 def test_static_assets_have_correct_type(phone_client, path, mime):
     response = phone_client.get(path)
