@@ -1,6 +1,7 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
 import { attachSwipe } from "./gesture.js";
+import { startCompass } from "./heading.js";
 
 const TOKEN_KEY = "flick.token";
 const TOKEN_HEADER = "X-Flick-Token";
@@ -13,6 +14,10 @@ const state = {
   // { file: File, url: string } for the photo on the card, or null.
   photo: null,
   sending: false,
+  // "off" | "on" | "denied" | "unsupported"
+  compass: "off",
+  // Latest heading in degrees, or null before the first reading.
+  heading: null,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -88,10 +93,40 @@ function render() {
   pill.className = `pill ${tone}`;
 
   const unpaired = state.pairing === "unpaired";
+  $("direction").hidden = unpaired;
+  renderDirection();
   $("unpaired").hidden = !unpaired;
   $("empty").hidden = unpaired || state.photo !== null;
   $("card").hidden = unpaired || state.photo === null;
   $("pick").hidden = unpaired;
+}
+
+const COMPASS_TEXT = {
+  off: "Compass off",
+  denied: "Compass permission denied",
+  unsupported: "No compass on this browser",
+};
+
+function renderDirection() {
+  const on = state.compass === "on";
+  $("dir-text").textContent =
+    on && state.heading !== null
+      ? `Heading ${Math.round(state.heading)}°`
+      : on
+        ? "Waiting for compass…"
+        : COMPASS_TEXT[state.compass];
+  $("compass-btn").hidden = on || state.compass === "unsupported";
+}
+
+function onHeading(degrees) {
+  state.heading = degrees;
+  renderDirection();
+}
+
+async function enableCompass() {
+  const result = await startCompass(onHeading);
+  state.compass = result === "ok" ? "on" : result;
+  renderDirection();
 }
 
 function setPhoto(file) {
@@ -203,6 +238,7 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
+  $("compass-btn").addEventListener("click", enableCompass);
   attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
   state.token = takeTokenFromLink() ?? storeGet(TOKEN_KEY);
   render();
