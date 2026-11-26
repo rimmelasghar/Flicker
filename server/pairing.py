@@ -6,18 +6,22 @@ client IPs are unreliable behind Docker Desktop.
 """
 
 import html
+import logging
 
 import segno
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from server.auth import TokenStore
-from server.config import PHONE_PORT, Settings
+from server.config import PAIR_PORT, PHONE_PORT, Settings
+
+log = logging.getLogger("flick")
 
 # Reject other Host headers so a web page using DNS rebinding cannot
 # read the token from this page.
 LOCAL_HOSTS = ["localhost", "127.0.0.1"]
+LOCAL_ORIGINS = {f"http://{host}:{PAIR_PORT}" for host in LOCAL_HOSTS}
 NO_STORE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
 
 PAGE = """<!doctype html>
@@ -43,6 +47,14 @@ PAGE = """<!doctype html>
   <li>The phone is paired; it stays paired across restarts.</li>
 </ol>
 <p>Phone address: <code>{lan_url}</code></p>
+<p><button id="rotate" type="button">Unpair all phones (new code)</button></p>
+<script>
+  document.getElementById("rotate").addEventListener("click", async () => {{
+    if (!confirm("Unpair every phone? Each one must scan the new code.")) return;
+    const res = await fetch("/api/token/rotate", {{ method: "POST" }});
+    if (res.ok) location.reload(); else alert("Could not rotate token");
+  }});
+</script>
 </body>
 </html>
 """
@@ -65,4 +77,19 @@ def create_pair_app(settings: Settings, tokens: TokenStore) -> FastAPI:
         )
         return HTMLResponse(page, headers=NO_STORE)
 
+    @app.post("/api/token/rotate")
+    def rotate(request: Request) -> dict[str, bool]:
+        _reject_cross_site(request)
+        tokens.rotate()
+        log.info("pairing token rotated; all phones unpaired")
+        return {"ok": True}
+
     return app
+
+
+def _reject_cross_site(request: Request) -> None:
+    """Block form posts from other web pages open in the laptop browser."""
+    site = request.headers.get("sec-fetch-site")
+    origin = request.headers.get("origin")
+    if (site and site not in ("same-origin", "none")) or (origin and origin not in LOCAL_ORIGINS):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "cross-site request refused")

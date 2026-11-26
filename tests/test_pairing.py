@@ -25,3 +25,29 @@ def test_pair_page_shows_qr_code(pair_client):
 def test_pair_page_rejects_foreign_host_header(settings, tokens):
     client = TestClient(create_pair_app(settings, tokens), base_url="http://evil.example:8080")
     assert client.get("/pair").status_code == 400
+
+
+def test_rotate_changes_token(pair_client, tokens):
+    old = tokens.current
+    response = pair_client.post("/api/token/rotate")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert tokens.current != old
+
+
+def test_rotate_refuses_cross_site_post(pair_client, tokens):
+    old = tokens.current
+    response = pair_client.post(
+        "/api/token/rotate",
+        headers={"Origin": "https://evil.example", "Sec-Fetch-Site": "cross-site"},
+    )
+    assert response.status_code == 403
+    assert tokens.current == old
+
+
+def test_rotate_allows_same_origin_fetch(pair_client):
+    response = pair_client.post(
+        "/api/token/rotate",
+        headers={"Origin": "http://localhost:8080", "Sec-Fetch-Site": "same-origin"},
+    )
+    assert response.status_code == 200
