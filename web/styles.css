@@ -139,6 +139,15 @@ body {
   will-change: transform;
 }
 
+.card {
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 150ms;
+}
+.card.in-range { outline-color: var(--ok); }
+
+.dot { transition: background-color 150ms; }
+
 .card img {
   display: block;
   width: 100%;

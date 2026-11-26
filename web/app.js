@@ -1,7 +1,7 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
 import { attachSwipe } from "./gesture.js";
-import { angleDiff, startCompass } from "./heading.js";
+import { angleDiff, normalize, startCompass } from "./heading.js";
 
 const TOKEN_KEY = "flick.token";
 const TOKEN_HEADER = "X-Flick-Token";
@@ -134,13 +134,24 @@ function renderDirection() {
   let text = COMPASS_TEXT[state.compass];
   if (on && reading === null) text = "Waiting for compass…";
   else if (on && !state.calibration) text = "Not calibrated: tap Calibrate";
-  else if (on) text = `Heading ${reading}°, laptop at ${Math.round(state.calibration.heading)}°`;
+  else if (on) text = pointingText();
+  const inRange = on && directionProblem() === null;
   $("dir-text").textContent = text;
+  $("dir-dot").className = `dot ${inRange ? "ok" : ""}`;
+  $("card").classList.toggle("in-range", inRange);
   $("compass-btn").hidden = on || state.compass === "unsupported";
   $("calibrate-btn").hidden = !on || state.calibrating;
   $("calibrate-btn").textContent = state.calibration ? "Re-calibrate" : "Calibrate";
   $("cal-heading").textContent = reading === null ? "–" : `${reading}°`;
   $("cal-save").disabled = reading === null;
+}
+
+function pointingText() {
+  const off = angleDiff(state.heading, state.calibration.heading);
+  if (off <= ANGLE_TOLERANCE) return "Pointing at the laptop";
+  // Positive: the laptop is clockwise from where the phone points.
+  const turn = normalize(state.calibration.heading - state.heading) <= 180 ? "right" : "left";
+  return `Turn ${turn} ${Math.round(off)}° to the laptop`;
 }
 
 function onHeading(degrees) {
