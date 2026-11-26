@@ -2,10 +2,15 @@
 
 import os
 import secrets
+from collections.abc import Callable
 from pathlib import Path
+from typing import Annotated
+
+from fastapi import Header, HTTPException, status
 
 TOKEN_FILE = "token"
 TOKEN_BYTES = 32
+TOKEN_HEADER = "X-Flick-Token"
 
 
 class TokenStore:
@@ -38,3 +43,17 @@ class TokenStore:
             handle.write(token)
         os.replace(tmp, self._path)
         return token
+
+
+def token_guard(tokens: TokenStore) -> Callable[[str | None], None]:
+    """FastAPI dependency that rejects requests without the current token."""
+
+    def require_token(
+        x_flick_token: Annotated[str | None, Header(alias=TOKEN_HEADER)] = None,
+    ) -> None:
+        expected = tokens.current.encode()
+        given = (x_flick_token or "").encode()
+        if not secrets.compare_digest(given, expected):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing or invalid token")
+
+    return require_token

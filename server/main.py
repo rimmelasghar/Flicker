@@ -4,9 +4,9 @@ import asyncio
 import logging
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import APIRouter, Depends, FastAPI
 
-from server.auth import TokenStore
+from server.auth import TokenStore, token_guard
 from server.certs import ensure_certificate
 from server.config import PHONE_PORT, Settings, load_settings
 
@@ -19,6 +19,9 @@ def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
     def health() -> dict[str, bool]:
         return {"ok": True}
 
+    # Every route on this router needs the X-Flick-Token header.
+    protected = APIRouter(prefix="/api", dependencies=[Depends(token_guard(tokens))])
+    app.include_router(protected)
     return app
 
 
