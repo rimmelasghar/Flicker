@@ -4,7 +4,6 @@ import datetime as dt
 import errno
 import logging
 import re
-import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -70,7 +69,31 @@ def _open_unique(inbox: Path, base: str, ext: str) -> tuple[Path, BinaryIO]:
     raise HTTPException(status.HTTP_409_CONFLICT, "too many files with the same name")
 
 
-def save_upload(source: BinaryIO, original_name: str | None, inbox: Path) -> SavedFile:
+def _too_large(max_bytes: int) -> HTTPException:
+    return HTTPException(
+        status.HTTP_413_CONTENT_TOO_LARGE,
+        f"file is larger than {max_bytes // (1024 * 1024)} MB",
+    )
+
+
+def _copy_limited(source: BinaryIO, target: BinaryIO, max_bytes: int) -> int:
+    size = 0
+    while chunk := source.read(CHUNK):
+        size += len(chunk)
+        if size > max_bytes:
+            raise _too_large(max_bytes)
+        target.write(chunk)
+    return size
+
+
+def save_upload(
+    source: BinaryIO, original_name: str | None, inbox: Path, max_bytes: int
+) -> SavedFile:
+    # Cheap early check when the size is known; the copy enforces it anyway.
+    source.seek(0, 2)
+    if source.tell() > max_bytes:
+        raise _too_large(max_bytes)
+    source.seek(0)
     # Judge the type by the bytes, never by the name or Content-Type.
     ext = image_extension(source.read(HEAD_BYTES))
     source.seek(0)
@@ -84,8 +107,10 @@ def save_upload(source: BinaryIO, original_name: str | None, inbox: Path) -> Sav
     path, target = _open_unique(inbox, f"{stamp}-{stem}", ext)
     try:
         with target:
-            shutil.copyfileobj(source, target, CHUNK)
-            size = target.tell()
+            size = _copy_limited(source, target, max_bytes)
+    except HTTPException:
+        path.unlink(missing_ok=True)
+        raise
     except OSError as exc:
         path.unlink(missing_ok=True)
         if exc.errno == errno.ENOSPC:

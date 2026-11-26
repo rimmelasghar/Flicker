@@ -1,8 +1,11 @@
 import re
+from dataclasses import replace
 
 import pytest
+from fastapi.testclient import TestClient
 
 from server.auth import TOKEN_HEADER
+from server.main import create_phone_app
 from server.upload import image_extension, safe_stem
 from tests import samples
 
@@ -54,6 +57,25 @@ def test_other_types_are_not_allowed(data):
 def test_extension_comes_from_bytes_not_name(phone_client, tokens):
     saved = _upload(phone_client, tokens, name="holiday.jpg", data=samples.PNG).json()["saved"]
     assert saved.endswith("-holiday.png")
+
+
+@pytest.fixture
+def small_limit_client(settings, tokens):
+    return TestClient(create_phone_app(replace(settings, max_file_mb=1), tokens))
+
+
+def test_file_over_limit_is_rejected_with_413(small_limit_client, tokens, settings):
+    big = samples.JPEG + b"\x00" * (1024 * 1024)
+    response = _upload(small_limit_client, tokens, data=big)
+    assert response.status_code == 413
+    assert list(settings.inbox_dir.iterdir()) == []
+
+
+def test_file_exactly_at_limit_is_accepted(small_limit_client, tokens):
+    exact = samples.JPEG + b"\x00" * (1024 * 1024 - len(samples.JPEG))
+    response = _upload(small_limit_client, tokens, data=exact)
+    assert response.status_code == 200
+    assert response.json()["bytes"] == 1024 * 1024
 
 
 def test_non_image_is_rejected_with_415(phone_client, tokens, settings):

@@ -36,7 +36,7 @@ def create_phone_app(settings: Settings, tokens: TokenStore) -> FastAPI:
 
     @protected.post("/upload")
     def upload(file: Annotated[UploadFile, File()]) -> dict[str, bool | str | int]:
-        saved = save_upload(file.file, file.filename, settings.inbox_dir)
+        saved = save_upload(file.file, file.filename, settings.inbox_dir, settings.max_file_bytes)
         return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
     app.include_router(protected)
