@@ -24,6 +24,10 @@ LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, e
 
 # filetype extension -> extension used for the saved file.
 ALLOWED = {"jpg": "jpg", "png": "png", "apng": "png", "gif": "gif", "webp": "webp", "heic": "heic"}
+# Videos phones record: MP4 (Android, some iPhone exports) and QuickTime MOV
+# (iPhone camera). filetype reports M4V as mp4.
+VIDEOS = {"mp4": "mp4", "mov": "mov", "m4v": "m4v"}
+UNSUPPORTED = "only photos (JPEG, PNG, HEIC/HEIF, WebP, GIF) and videos (MP4, MOV) are accepted"
 # ISO-BMFF brands of HEIF stills that filetype does not report as heic.
 HEIF_BRANDS = {"heic", "heix", "hevc", "hevx", "heim", "heis", "mif1", "msf1"}
 
@@ -117,29 +121,38 @@ def _copy_limited(source: BinaryIO, target: BinaryIO, max_bytes: int) -> int:
     return size
 
 
+def video_extension(head: bytes) -> str | None:
+    """Extension for an allowed video judged by its first bytes, else None."""
+    kind = filetype.guess(head)
+    return VIDEOS.get(kind.extension) if kind is not None else None
+
+
 def save_upload(
     source: BinaryIO,
     original_name: str | None,
     inbox: Path,
     max_bytes: int,
     destination: Path | None = None,
+    max_video_bytes: int | None = None,
 ) -> SavedFile:
     """Save into destination (a folder inside the inbox; default the inbox).
-    The temp file always lives in the inbox, on the same filesystem."""
+    The temp file always lives in the inbox, on the same filesystem.
+    max_bytes limits photos; max_video_bytes (default: max_bytes) videos."""
     destination = destination or inbox
+    # Judge the type by the bytes, never by the name or Content-Type.
+    head = source.read(HEAD_BYTES)
+    # Videos first: the HEIF brand fallback could otherwise claim an MP4.
+    if (ext := video_extension(head)) is not None:
+        max_bytes = max_video_bytes or max_bytes
+    else:
+        ext = image_extension(head)
+    if ext is None:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, UNSUPPORTED)
     # Cheap early check when the size is known; the copy enforces it anyway.
     source.seek(0, 2)
     if source.tell() > max_bytes:
         raise _too_large(max_bytes)
     source.seek(0)
-    # Judge the type by the bytes, never by the name or Content-Type.
-    ext = image_extension(source.read(HEAD_BYTES))
-    source.seek(0)
-    if ext is None:
-        raise HTTPException(
-            status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            "only JPEG, PNG, HEIC/HEIF, WebP and GIF images are accepted",
-        )
     stem = safe_stem(original_name)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     tmp_dir = inbox / TMP_DIR

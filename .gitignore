@@ -234,3 +234,6 @@ inbox/
 *.swp
 .DS_Store
 Thumbs.db
+
+# Local agent instructions, kept out of the repo
+AGENTS.md

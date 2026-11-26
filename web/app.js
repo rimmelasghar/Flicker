@@ -30,9 +30,12 @@ const state = {
   motion: "off",
   // User setting: send by flicking the phone itself.
   wristEnabled: true,
+  // User setting: one flick sends the whole stack, not just the top card.
+  sendAll: true,
 };
 
 const WRIST_KEY = "flick.wrist";
+const SEND_ALL_KEY = "flick.sendAll";
 const HEADING_LOG_MS = 1500;
 // Direction is judged from the heading this long before the jolt.
 // The flick is reported ~350 ms after its peak, so look back past both.
@@ -137,6 +140,7 @@ function render() {
   $("direction").hidden = unpaired;
   renderDirection();
   renderWrist();
+  renderSendAll();
   $("unpaired").hidden = !unpaired;
   $("calibrate").hidden = !calibrating;
   $("empty").hidden = !main || state.photo !== null;
@@ -249,6 +253,22 @@ function toggleWrist() {
   renderWrist();
 }
 
+// The "send all" switch only matters, so only shows, with 2+ files picked.
+function renderSendAll() {
+  const btn = $("sendall-btn");
+  const stacked = state.photo !== null && state.queue.length > 0;
+  btn.hidden = state.pairing === "unpaired" || state.calibrating || !stacked;
+  btn.setAttribute("aria-checked", String(state.sendAll));
+  const count = state.queue.length + 1;
+  $("sendall-label").textContent = `Send all ${count} with one flick`;
+}
+
+function toggleSendAll() {
+  state.sendAll = !state.sendAll;
+  storeSet(SEND_ALL_KEY, state.sendAll ? "on" : "off");
+  renderSendAll();
+}
+
 // The whole phone was flicked. Only sends with a working compass that
 // pointed at the laptop just before, so putting the phone down cannot send.
 function onWristFlick() {
@@ -287,11 +307,39 @@ function saveCalibration() {
   setCalibrating(false);
 }
 
+const isVideo = (file) => file.type.startsWith("video/");
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "Video";
+  const s = Math.round(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Show a photo or video on the card (a muted, looping preview for videos).
 function setPhoto(file) {
   if (state.photo) URL.revokeObjectURL(state.photo.url);
   state.photo = file ? { file, url: URL.createObjectURL(file) } : null;
-  if (state.photo) $("card-img").src = state.photo.url;
-  else $("card-img").removeAttribute("src");
+  const img = $("card-img");
+  const video = $("card-video");
+  const showVideo = state.photo !== null && isVideo(state.photo.file);
+  img.hidden = showVideo;
+  video.hidden = !showVideo;
+  $("video-badge").hidden = !showVideo;
+  if (showVideo) {
+    img.removeAttribute("src");
+    $("video-duration").textContent = "Video";
+    video.src = state.photo.url;
+    video.onloadedmetadata = () => {
+      $("video-duration").textContent = formatDuration(video.duration);
+    };
+    video.play().catch(() => {});
+  } else {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    if (state.photo) img.src = state.photo.url;
+    else img.removeAttribute("src");
+  }
   renderStack();
   render();
 }
@@ -302,6 +350,7 @@ function renderStack() {
   $("card").classList.toggle("stacked", waiting > 0);
   $("stack-count").hidden = waiting === 0;
   $("stack-count").textContent = `+${waiting}`;
+  renderSendAll();
 }
 
 // Show the next waiting photo on the card (or none).
@@ -359,8 +408,8 @@ function clearCard() {
 
 const UPLOAD_ERRORS = {
   401: "Not paired any more. Scan the QR code again.",
-  413: "Photo is too large.",
-  415: "Not a supported image type.",
+  413: "File is too large.",
+  415: "Not a supported photo or video.",
   429: "Too many photos at once. Wait a moment.",
   507: "Laptop disk is full.",
 };
@@ -391,17 +440,71 @@ function skip() {
   showNext();
 }
 
-async function upload(file) {
-  const body = new FormData();
-  body.append("file", file, file.name);
-  const timeout = AbortSignal.timeout?.(120_000);
-  const res = await api("/api/upload", { method: "POST", body, signal: timeout });
-  if (!res.ok) {
-    const error = new Error(UPLOAD_ERRORS[res.status] ?? `Upload failed (${res.status}).`);
-    error.status = res.status;
-    throw error;
-  }
-  return res.json();
+// Give up when an upload makes no progress for this long. There is no
+// overall time limit: a 2 GB video on slow Wi-Fi may take many minutes.
+const STALL_MS = 60_000;
+
+function offlineError(name) {
+  const error = new Error("Laptop unreachable. Same Wi-Fi?");
+  error.name = name;
+  error.offline = true;
+  return error;
+}
+
+// XMLHttpRequest rather than fetch: only XHR reports upload progress.
+// onProgress(fraction) is called as bytes leave the phone.
+function upload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let stall;
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => {
+        xhr.abort();
+        reject(offlineError("TimeoutError"));
+      }, STALL_MS);
+    };
+    xhr.open("POST", "/api/upload");
+    xhr.setRequestHeader(TOKEN_HEADER, state.token ?? "");
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      watch();
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    // All bytes sent: the laptop is now saving, which can take a while for
+    // a big video, so stop the stall timer.
+    xhr.upload.onload = () => clearTimeout(stall);
+    xhr.onload = () => {
+      clearTimeout(stall);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response ?? {});
+        return;
+      }
+      const error = new Error(UPLOAD_ERRORS[xhr.status] ?? `Upload failed (${xhr.status}).`);
+      error.status = xhr.status;
+      reject(error);
+    };
+    xhr.onerror = () => {
+      clearTimeout(stall);
+      reject(offlineError("NetworkError"));
+    };
+    const body = new FormData();
+    body.append("file", file, file.name);
+    watch();
+    xhr.send(body);
+  });
+}
+
+// Progress bar under the status line; fraction null hides it.
+function showProgress(fraction, label = "Sending") {
+  const bar = $("progress");
+  bar.hidden = fraction === null;
+  if (fraction === null) return;
+  const percent = Math.round(fraction * 100);
+  $("progress-fill").style.width = `${percent}%`;
+  const el = $("status");
+  el.textContent = `${label}… ${percent}%`;
+  el.className = "status";
 }
 
 // A real flick while not pointing at the laptop: spring back and say why.
@@ -411,40 +514,69 @@ function onBlocked() {
   navigator.vibrate?.([20, 60, 20]);
 }
 
+// Sends the top card, or with "send all" on the whole stack, one file
+// after another. Files that fail go back on top of the stack.
 async function onFlick(dx) {
   if (state.sending || !state.photo) return;
   state.sending = true;
-  const { file } = state.photo;
-  setStatus("Sending…");
-  const sending = upload(file);
-  // The result is awaited after the animation; mark it handled now so an
-  // early failure is not reported as an unhandled rejection meanwhile.
-  sending.catch(() => {});
+  const all = state.sendAll && state.queue.length > 0;
+  const batch = all ? [state.photo.file, ...state.queue] : [state.photo.file];
+  if (all) state.queue = [];
+  const total = batch.length;
+  const label = (i) => (total > 1 ? `Sending ${i + 1} of ${total}` : "Sending");
+  const send = (i) => upload(batch[i], (fraction) => showProgress(fraction, label(i)));
+
+  showProgress(0, label(0));
+  // The first upload runs during the fly-off animation; mark it handled now
+  // so an early failure is not reported as an unhandled rejection meanwhile.
+  const first = send(0);
+  first.catch(() => {});
   await flyAway(dx);
   clearCard();
-  showNext();
-  try {
-    const result = await sending;
-    const left = state.queue.length + (state.photo ? 1 : 0);
-    setStatus(`Sent: ${result.saved}${left ? ` (${left} to go)` : ""}`, "ok");
-    navigator.vibrate?.(30);
-  } catch (error) {
-    // Put the photo back on top of the stack so it can be flicked again.
-    if (state.photo) state.queue.unshift(state.photo.file);
-    setPhoto(file);
-    if (error.status === 401) {
-      state.token = null;
-      storeSet(TOKEN_KEY, null);
-      state.pairing = "unpaired";
-      render();
+  if (all) setPhoto(null);
+  else showNext();
+
+  const saved = [];
+  const failed = [];
+  let lastError = null;
+  for (let i = 0; i < total; i++) {
+    // Unpaired or offline: the rest would fail the same way, keep them.
+    if (lastError?.status === 401 || lastError?.offline) {
+      failed.push(batch[i]);
+      continue;
     }
-    const offline = error instanceof TypeError || error.name === "TimeoutError";
-    setStatus(offline ? "Laptop unreachable. Same Wi-Fi?" : error.message, "err");
-    if (error.status === 413 || error.status === 415) showErrorActions("skip");
-    else if (error.status !== 401) showErrorActions("retry");
-  } finally {
-    state.sending = false;
+    try {
+      saved.push((await (i === 0 ? first : send(i))).saved);
+    } catch (error) {
+      failed.push(batch[i]);
+      lastError = error;
+    }
   }
+  showProgress(null);
+  state.sending = false;
+
+  if (!failed.length) {
+    const left = state.queue.length + (state.photo ? 1 : 0);
+    const what = total > 1 ? `Sent all ${total}` : `Sent: ${saved[0]}`;
+    setStatus(`${what}${left ? ` (${left} to go)` : ""}`, "ok");
+    navigator.vibrate?.(30);
+    return;
+  }
+
+  // Failed files go back on top, before anything still waiting.
+  const waiting = state.photo ? [state.photo.file, ...state.queue] : state.queue;
+  state.queue = [...failed.slice(1), ...waiting];
+  setPhoto(failed[0]);
+  if (lastError.status === 401) {
+    state.token = null;
+    storeSet(TOKEN_KEY, null);
+    state.pairing = "unpaired";
+    render();
+  }
+  const partly = saved.length ? `${saved.length} sent, ${failed.length} not sent. ` : "";
+  setStatus(`${partly}${lastError.message}`, "err");
+  if (lastError.status === 413 || lastError.status === 415) showErrorActions("skip");
+  else if (lastError.status !== 401) showErrorActions("retry");
 }
 
 async function init() {
@@ -459,6 +591,8 @@ async function init() {
   });
   $("wrist-btn").addEventListener("click", toggleWrist);
   state.wristEnabled = storeGet(WRIST_KEY) !== "off";
+  $("sendall-btn").addEventListener("click", toggleSendAll);
+  state.sendAll = storeGet(SEND_ALL_KEY) !== "off";
   enableMotion({ auto: true });
   $("calibrate-btn").addEventListener("click", () => setCalibrating(true));
   $("cal-save").addEventListener("click", saveCalibration);

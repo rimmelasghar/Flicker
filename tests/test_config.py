@@ -8,6 +8,8 @@ def test_defaults_apply_when_only_host_ip_set():
     assert settings.host_ip == "192.168.1.50"
     assert settings.max_file_mb == 50
     assert settings.max_file_bytes == 50 * 1024 * 1024
+    assert settings.max_video_mb == 2048
+    assert settings.max_video_bytes == 2048 * 1024 * 1024
     assert settings.angle_tolerance == 35
     assert (settings.puid, settings.pgid) == (1000, 1000)
 
@@ -41,6 +43,7 @@ def test_blank_optional_values_use_defaults():
         {"HOST_IP": "10.0.0.7", "MAX_FILE_MB": "abc"},
         {"HOST_IP": "10.0.0.7", "MAX_FILE_MB": "0"},
         {"HOST_IP": "10.0.0.7", "ANGLE_TOLERANCE": "500"},
+        {"HOST_IP": "10.0.0.7", "MAX_VIDEO_MB": "0"},
     ],
 )
 def test_invalid_env_raises(env):
