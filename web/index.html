@@ -6,6 +6,13 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#111114">
   <title>Flick</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Flick">
   <link rel="stylesheet" href="styles.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -42,14 +49,19 @@
 
     <div id="card" class="card" hidden>
       <img id="card-img" alt="Selected photo" draggable="false">
+      <span id="stack-count" class="stack-count" hidden></span>
     </div>
   </main>
 
   <footer class="bar bottom">
     <p id="status" class="status" role="status" aria-live="polite"></p>
+    <div id="error-actions" class="error-actions" hidden>
+      <button id="retry-btn" class="button secondary" type="button">Retry</button>
+      <button id="skip-btn" class="button secondary" type="button">Skip this photo</button>
+    </div>
     <label id="pick" class="button" hidden>
-      Choose photo
-      <input id="file-input" type="file" accept="image/*" hidden>
+      Choose photos
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
     </label>
     <button id="wrist-btn" class="link" type="button" hidden>Flick the phone to send: on</button>
   </footer>

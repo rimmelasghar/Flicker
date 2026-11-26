@@ -13,6 +13,8 @@ const state = {
   host: "",
   // { file: File, url: string } for the photo on the card, or null.
   photo: null,
+  // Further picked photos, sent one per flick after the card.
+  queue: [],
   sending: false,
   // "off" | "on" | "denied" | "unsupported"
   compass: "off",
@@ -279,15 +281,31 @@ function setPhoto(file) {
   state.photo = file ? { file, url: URL.createObjectURL(file) } : null;
   if (state.photo) $("card-img").src = state.photo.url;
   else $("card-img").removeAttribute("src");
+  renderStack();
   render();
 }
 
+// Photos waiting under the top card.
+function renderStack() {
+  const waiting = state.queue.length;
+  $("card").classList.toggle("stacked", waiting > 0);
+  $("stack-count").hidden = waiting === 0;
+  $("stack-count").textContent = `+${waiting}`;
+}
+
+// Show the next waiting photo on the card (or none).
+function showNext() {
+  setPhoto(state.queue.shift() ?? null);
+}
+
 function onPick(event) {
-  const [file] = event.target.files;
+  const files = [...event.target.files];
   // Reset so picking the same photo again still fires "change".
   event.target.value = "";
-  if (file) {
-    setPhoto(file);
+  if (files.length) {
+    state.queue.push(...files);
+    if (!state.photo) showNext();
+    else renderStack();
     const wrist = state.wristEnabled && state.motion === "on" && state.compass === "on";
     setStatus(
       wrist ? "Point at the laptop, then swipe up or flick the phone." : "Point at the laptop and swipe up.",
@@ -340,6 +358,26 @@ function setStatus(text, tone = "") {
   const el = $("status");
   el.textContent = text;
   el.className = `status ${tone}`;
+  showErrorActions(null);
+}
+
+// After a failed upload: "retry" when trying again can help (network,
+// busy, disk full), "skip" when this photo can never be sent (too large,
+// wrong type), null to hide both.
+function showErrorActions(kind) {
+  $("error-actions").hidden = kind === null;
+  $("retry-btn").hidden = kind !== "retry";
+  $("skip-btn").hidden = kind === null;
+}
+
+function retry() {
+  // An explicit tap: send the top photo again without another flick.
+  onFlick(0);
+}
+
+function skip() {
+  setStatus("Skipped.");
+  showNext();
 }
 
 async function upload(file) {
@@ -368,15 +406,20 @@ async function onFlick(dx) {
   const { file } = state.photo;
   setStatus("Sending…");
   const sending = upload(file);
+  // The result is awaited after the animation; mark it handled now so an
+  // early failure is not reported as an unhandled rejection meanwhile.
+  sending.catch(() => {});
   await flyAway(dx);
   clearCard();
-  setPhoto(null);
+  showNext();
   try {
     const result = await sending;
-    setStatus(`Sent: ${result.saved}`, "ok");
+    const left = state.queue.length + (state.photo ? 1 : 0);
+    setStatus(`Sent: ${result.saved}${left ? ` (${left} to go)` : ""}`, "ok");
     navigator.vibrate?.(30);
   } catch (error) {
-    // Put the photo back so the user can flick it again.
+    // Put the photo back on top of the stack so it can be flicked again.
+    if (state.photo) state.queue.unshift(state.photo.file);
     setPhoto(file);
     if (error.status === 401) {
       state.token = null;
@@ -386,6 +429,8 @@ async function onFlick(dx) {
     }
     const offline = error instanceof TypeError || error.name === "TimeoutError";
     setStatus(offline ? "Laptop unreachable. Same Wi-Fi?" : error.message, "err");
+    if (error.status === 413 || error.status === 415) showErrorActions("skip");
+    else if (error.status !== 401) showErrorActions("retry");
   } finally {
     state.sending = false;
   }
@@ -393,6 +438,8 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
+  $("retry-btn").addEventListener("click", retry);
+  $("skip-btn").addEventListener("click", skip);
   // One tap asks for both sensors: on iPhone each requestPermission call
   // must start inside the tap, before any await.
   $("compass-btn").addEventListener("click", () => {
