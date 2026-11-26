@@ -1,6 +1,7 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
-import { attachSwipe } from "./gesture.js";
+import { attachSwipe, startWristFlick } from "./gesture.js";
+import { angleDiff, normalize, startCompass } from "./heading.js";
 
 const TOKEN_KEY = "flick.token";
 const TOKEN_HEADER = "X-Flick-Token";
@@ -13,7 +14,48 @@ const state = {
   // { file: File, url: string } for the photo on the card, or null.
   photo: null,
   sending: false,
+  // "off" | "on" | "denied" | "unsupported"
+  compass: "off",
+  // Latest heading in degrees, or null before the first reading.
+  heading: null,
+  // { heading, savedAt } saved when the user pointed at the laptop.
+  calibration: null,
+  calibrating: false,
+  // Recent { t, heading } readings, to check direction from just before a
+  // wrist flick (the flick itself swings the compass).
+  headingLog: [],
+  // Motion sensor: "off" | "on" | "denied" | "unsupported"
+  motion: "off",
+  // User setting: send by flicking the phone itself.
+  wristEnabled: true,
 };
+
+const WRIST_KEY = "flick.wrist";
+const HEADING_LOG_MS = 1500;
+// Direction is judged from the heading this long before the jolt.
+// The flick is reported ~350 ms after its peak, so look back past both.
+const WRIST_LOOKBACK_MS = 900;
+
+const CALIBRATION_KEY = "flick.calibration";
+// ± degrees from the calibrated laptop heading that still count as
+// pointing at it (design doc default).
+const ANGLE_TOLERANCE = 35;
+
+// How long to wait for a first reading before giving up on the compass.
+const COMPASS_TIMEOUT_MS = 2000;
+// Compass states in which Flick falls back to swipe-only sending.
+const SWIPE_ONLY = new Set(["unsupported", "denied", "nodata"]);
+
+// Why a flick may not send right now, or null when it may.
+function directionProblem(heading = state.heading) {
+  if (SWIPE_ONLY.has(state.compass)) return null;
+  if (state.compass !== "on") return "Enable the compass first.";
+  if (heading === null) return "Waiting for the compass…";
+  if (!state.calibration) return "Calibrate first: point at the laptop and tap Calibrate.";
+  const off = angleDiff(heading, state.calibration.heading);
+  if (off > ANGLE_TOLERANCE) return `Point at the laptop (${Math.round(off)}° off).`;
+  return null;
+}
 
 const $ = (id) => document.getElementById(id);
 
@@ -88,10 +130,148 @@ function render() {
   pill.className = `pill ${tone}`;
 
   const unpaired = state.pairing === "unpaired";
+  const calibrating = !unpaired && state.calibrating;
+  const main = !unpaired && !calibrating;
+  $("direction").hidden = unpaired;
+  renderDirection();
+  renderWrist();
   $("unpaired").hidden = !unpaired;
-  $("empty").hidden = unpaired || state.photo !== null;
-  $("card").hidden = unpaired || state.photo === null;
-  $("pick").hidden = unpaired;
+  $("calibrate").hidden = !calibrating;
+  $("empty").hidden = !main || state.photo !== null;
+  $("card").hidden = !main || state.photo === null;
+  $("pick").hidden = !main;
+}
+
+const COMPASS_TEXT = {
+  off: "Compass off",
+  denied: "Compass not allowed: swipe-only, no direction check",
+  unsupported: "No compass on this browser: swipe-only, no direction check",
+  nodata: "No compass data: swipe-only, no direction check",
+};
+
+function renderDirection() {
+  const on = state.compass === "on";
+  const reading = state.heading === null ? null : Math.round(state.heading);
+  let text = COMPASS_TEXT[state.compass];
+  if (on && reading === null) text = "Waiting for compass…";
+  else if (on && !state.calibration) text = "Not calibrated: tap Calibrate";
+  else if (on) text = pointingText();
+  const inRange = on && directionProblem() === null;
+  $("dir-text").textContent = text;
+  $("dir-dot").className = `dot ${inRange ? "ok" : ""}`;
+  $("card").classList.toggle("in-range", inRange);
+  $("compass-btn").hidden = on || state.compass === "unsupported" || state.compass === "nodata";
+  $("calibrate-btn").hidden = !on || state.calibrating;
+  $("calibrate-btn").textContent = state.calibration ? "Re-calibrate" : "Calibrate";
+  $("cal-heading").textContent = reading === null ? "–" : `${reading}°`;
+  $("cal-save").disabled = reading === null;
+}
+
+function pointingText() {
+  const off = angleDiff(state.heading, state.calibration.heading);
+  if (off <= ANGLE_TOLERANCE) return "Pointing at the laptop";
+  // Positive: the laptop is clockwise from where the phone points.
+  const turn = normalize(state.calibration.heading - state.heading) <= 180 ? "right" : "left";
+  return `Turn ${turn} ${Math.round(off)}° to the laptop`;
+}
+
+function headingBefore(ms) {
+  const cutoff = performance.now() - ms;
+  const older = state.headingLog.filter((r) => r.t <= cutoff);
+  return (older.at(-1) ?? state.headingLog[0])?.heading ?? state.heading;
+}
+
+function onHeading(degrees) {
+  state.heading = degrees;
+  const now = performance.now();
+  state.headingLog.push({ t: now, heading: degrees });
+  state.headingLog = state.headingLog.filter((r) => now - r.t <= HEADING_LOG_MS);
+  if (state.compass === "nodata") {
+    // Readings arrived late after all: turn the direction check back on.
+    state.compass = "on";
+    render();
+    return;
+  }
+  renderDirection();
+}
+
+// auto: tried on page load without a tap. iPhone refuses that, which is
+// not a real "denied", so the button stays available.
+async function enableCompass({ auto = false } = {}) {
+  const result = await startCompass(onHeading);
+  if (auto && result === "denied") return;
+  state.compass = result === "ok" ? "on" : result;
+  // First time with a working compass: go straight to calibration.
+  if (state.compass === "on" && !state.calibration && !auto) state.calibrating = true;
+  render();
+  if (state.compass === "on") {
+    // Some browsers accept the listener but never deliver a heading
+    // (laptops, no magnetometer): fall back to swipe-only.
+    setTimeout(() => {
+      if (state.compass === "on" && state.heading === null) {
+        state.compass = "nodata";
+        state.calibrating = false;
+        render();
+      }
+    }, COMPASS_TIMEOUT_MS);
+  }
+}
+
+async function enableMotion({ auto = false } = {}) {
+  const result = await startWristFlick(onWristFlick);
+  if (auto && result === "denied") return;
+  state.motion = result === "ok" ? "on" : result;
+  render();
+}
+
+function renderWrist() {
+  const btn = $("wrist-btn");
+  btn.hidden = state.pairing === "unpaired" || state.motion !== "on";
+  btn.textContent = `Flick the phone to send: ${state.wristEnabled ? "on" : "off"}`;
+}
+
+function toggleWrist() {
+  state.wristEnabled = !state.wristEnabled;
+  storeSet(WRIST_KEY, state.wristEnabled ? "on" : "off");
+  renderWrist();
+}
+
+// The whole phone was flicked. Only sends with a working compass that
+// pointed at the laptop just before, so putting the phone down cannot send.
+function onWristFlick() {
+  if (!state.wristEnabled || !state.photo || state.sending || state.calibrating) return;
+  if (state.pairing === "unpaired" || document.hidden) return;
+  const problem =
+    state.compass === "on"
+      ? directionProblem(headingBefore(WRIST_LOOKBACK_MS))
+      : "Flicking the phone needs the compass. Swipe the photo up instead.";
+  if (problem) {
+    setStatus(problem, "err");
+    return;
+  }
+  onFlick(0);
+}
+
+function loadCalibration() {
+  try {
+    const saved = JSON.parse(storeGet(CALIBRATION_KEY));
+    return Number.isFinite(saved?.heading) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCalibrating(on) {
+  state.calibrating = on;
+  render();
+}
+
+function saveCalibration() {
+  if (state.heading === null) return;
+  state.calibration = { heading: state.heading, savedAt: new Date().toISOString() };
+  storeSet(CALIBRATION_KEY, JSON.stringify(state.calibration));
+  setStatus("Laptop direction saved.", "ok");
+  setCalibrating(false);
 }
 
 function setPhoto(file) {
@@ -108,7 +288,10 @@ function onPick(event) {
   event.target.value = "";
   if (file) {
     setPhoto(file);
-    setStatus("Point at the laptop and swipe up.");
+    const wrist = state.wristEnabled && state.motion === "on" && state.compass === "on";
+    setStatus(
+      wrist ? "Point at the laptop, then swipe up or flick the phone." : "Point at the laptop and swipe up.",
+    );
   }
 }
 
@@ -126,7 +309,7 @@ function resetCard() {
   card.style.transform = "";
 }
 
-const FLY_MS = 280;
+const FLY_MS = 220;
 
 // Animate the card up and off the screen; resolves when it is gone.
 function flyAway(dx) {
@@ -172,6 +355,13 @@ async function upload(file) {
   return res.json();
 }
 
+// A real flick while not pointing at the laptop: spring back and say why.
+function onBlocked() {
+  resetCard();
+  setStatus(directionProblem() ?? "Try again.", "err");
+  navigator.vibrate?.([20, 60, 20]);
+}
+
 async function onFlick(dx) {
   if (state.sending || !state.photo) return;
   state.sending = true;
@@ -203,7 +393,28 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
-  attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
+  // One tap asks for both sensors: on iPhone each requestPermission call
+  // must start inside the tap, before any await.
+  $("compass-btn").addEventListener("click", () => {
+    enableMotion();
+    enableCompass();
+  });
+  $("wrist-btn").addEventListener("click", toggleWrist);
+  state.wristEnabled = storeGet(WRIST_KEY) !== "off";
+  enableMotion({ auto: true });
+  $("calibrate-btn").addEventListener("click", () => setCalibrating(true));
+  $("cal-save").addEventListener("click", saveCalibration);
+  $("cal-cancel").addEventListener("click", () => setCalibrating(false));
+  state.calibration = loadCalibration();
+  // Android grants orientation without a tap, so try straight away.
+  enableCompass({ auto: true });
+  attachSwipe($("card"), {
+    onDrag: moveCard,
+    onFlick,
+    onCancel: resetCard,
+    allow: () => directionProblem() === null,
+    onBlocked,
+  });
   state.token = takeTokenFromLink() ?? storeGet(TOKEN_KEY);
   render();
   await checkPairing();

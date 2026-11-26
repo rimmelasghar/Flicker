@@ -1,11 +1,11 @@
 // Upward swipe ("flick") detection on the photo card, using Pointer Events.
 
 // A flick is a mostly vertical upward move that either travels far enough
-// or is released fast enough.
-const MIN_DISTANCE_FRACTION = 0.22; // of the viewport height
+// or is released fast enough (values from the design doc).
+const MIN_DISTANCE_FRACTION = 0.25; // of the viewport height
 const MIN_FAST_DISTANCE = 40; // px; a fast flick must still move this far
-const MIN_VELOCITY = 0.5; // px per ms, upward
-const VELOCITY_WINDOW = 80; // ms of recent samples used for velocity
+const MIN_VELOCITY = 0.8; // px per ms, upward
+const VELOCITY_WINDOW = 100; // ms of recent samples used for velocity
 
 export function isFlick({ dx, dy, vy, viewportHeight }) {
   if (dy >= 0 || Math.abs(dx) > Math.abs(dy)) return false;
@@ -21,9 +21,132 @@ function velocity(samples) {
   return dt > 0 ? (last.y - first.y) / dt : 0;
 }
 
-// Calls onDrag(dx, dy) while the finger moves, then either onFlick(dx, dy)
-// or onCancel() when it lifts. Returns a function that detaches the handlers.
-export function attachSwipe(el, { onDrag, onFlick, onCancel }) {
+// Physical "wrist flick": one sharp snap of the whole phone towards the
+// laptop. Shaking, putting the phone down and walking must not count, so
+// a flick needs all of:
+//   1. the phone held still just before (aiming),
+//   2. a fast turn about one main axis with a sharp jolt,
+//   3. no strong swing back afterwards (a shake reverses, a flick stops).
+// Any axis is accepted: iPhone Safari reports a forward wrist flick in
+// rotationRate.gamma, not beta as the spec's axis naming suggests.
+const AXES = ["alpha", "beta", "gamma"];
+const WRIST_ROTATION = 300; // deg/s, peak rate about the main axis
+const WRIST_ACCEL = 12; // m/s², peak acceleration without gravity
+const WRIST_WINDOW = 250; // ms; both peaks must fall inside this window
+const AXIS_SHARE = 1.5; // main axis must beat the other two by this factor
+const QUIET_ROTATION = 100; // deg/s; "held still" means below this ...
+const QUIET_ACCEL = 4; // ... and below this m/s²
+const QUIET_MS = 300; // for this long before the flick starts
+const SETTLE_MS = 350; // watch this long after the peak for a swing back
+const REVERSAL = 0.6; // a swing back above this share of the peak = shake
+const WRIST_COOLDOWN = 1500; // ms after a flick or a rejected shake
+const HISTORY_MS = 1000;
+const GRAVITY = 9.81;
+
+const peak = (list, pick) => Math.max(0, ...list.map(pick));
+
+// Returns push(sample) -> true when a wrist flick has just completed.
+// Samples are { t, alpha, beta, gamma, rot, acc } (rotation in deg/s).
+export function createWristDetector() {
+  let history = [];
+  let pending = null; // { t, axis, sign, peak } while watching for a swing back
+  let blockedUntil = -Infinity;
+
+  const settle = (sample) => {
+    const rate = sample[pending.axis];
+    const opposite = Math.sign(rate) === -pending.sign;
+    if (opposite && Math.abs(rate) > REVERSAL * pending.peak) {
+      pending = null; // swung back: a shake, not a flick
+      blockedUntil = sample.t + WRIST_COOLDOWN;
+      return false;
+    }
+    if (!opposite) pending.peak = Math.max(pending.peak, Math.abs(rate));
+    if (sample.t - pending.t < SETTLE_MS) return false;
+    pending = null;
+    blockedUntil = sample.t + WRIST_COOLDOWN;
+    return true;
+  };
+
+  return (sample) => {
+    history.push(sample);
+    history = history.filter((h) => sample.t - h.t <= HISTORY_MS);
+    if (pending) return settle(sample);
+    if (sample.t < blockedUntil) return false;
+
+    const recent = history.filter((h) => sample.t - h.t <= WRIST_WINDOW);
+    const peaks = AXES.map((axis) => peak(recent, (h) => Math.abs(h[axis])));
+    const main = peaks.indexOf(Math.max(...peaks));
+    const axis = AXES[main];
+    const other = Math.max(...peaks.filter((_, i) => i !== main));
+    if (peaks[main] < WRIST_ROTATION || peak(recent, (h) => h.acc) < WRIST_ACCEL) return false;
+    if (peaks[main] < AXIS_SHARE * other) return false;
+
+    const moving = (h) => h.rot > QUIET_ROTATION || h.acc > QUIET_ACCEL;
+    const onset = (recent.find(moving) ?? sample).t;
+    const before = history.filter((h) => h.t < onset && onset - h.t <= QUIET_MS);
+    const heldLongEnough = before.length > 0 && onset - before[0].t >= QUIET_MS * 0.8;
+    if (!heldLongEnough || before.some(moving)) return false;
+
+    const top = recent.reduce((a, b) => (Math.abs(b[axis]) > Math.abs(a[axis]) ? b : a));
+    pending = { t: top.t, axis, sign: Math.sign(top[axis]), peak: peaks[main] };
+    return false;
+  };
+}
+
+function motionSample(event) {
+  const r = event.rotationRate;
+  if (!r || (r.alpha == null && r.beta == null && r.gamma == null)) return null;
+  const alpha = r.alpha ?? 0;
+  const beta = r.beta ?? 0;
+  const gamma = r.gamma ?? 0;
+  const a = event.acceleration;
+  const g = event.accelerationIncludingGravity;
+  let acc;
+  if (a && a.x != null) acc = Math.hypot(a.x, a.y ?? 0, a.z ?? 0);
+  else if (g && g.x != null) acc = Math.abs(Math.hypot(g.x, g.y ?? 0, g.z ?? 0) - GRAVITY);
+  else return null;
+  return { t: event.timeStamp, alpha, beta, gamma, rot: Math.hypot(alpha, beta, gamma), acc };
+}
+
+let motionHandler = null;
+
+export function stopWristFlick() {
+  if (motionHandler) {
+    window.removeEventListener("devicemotion", motionHandler);
+    motionHandler = null;
+  }
+}
+
+// Calls onWristFlick() for each detected flick of the phone. Resolves to
+// "ok", "denied" or "unsupported". On iPhone, call this from a tap (it
+// shares the Motion & Orientation permission with the compass).
+export async function startWristFlick(onWristFlick) {
+  stopWristFlick();
+  const DME = window.DeviceMotionEvent;
+  if (!window.isSecureContext || !DME) return "unsupported";
+  if (typeof DME.requestPermission === "function") {
+    let answer = "denied";
+    try {
+      answer = await DME.requestPermission();
+    } catch {
+      // Thrown when not called from a user gesture.
+    }
+    if (answer !== "granted") return "denied";
+  }
+  const detect = createWristDetector();
+  motionHandler = (event) => {
+    const sample = motionSample(event);
+    if (sample && detect(sample)) onWristFlick();
+  };
+  window.addEventListener("devicemotion", motionHandler);
+  return "ok";
+}
+
+// Calls onDrag(dx, dy) while the finger moves, then when it lifts either
+// onFlick(dx, dy), onBlocked() for a flick that allow() refused (e.g. the
+// phone is not pointing at the laptop), or onCancel().
+// Returns a function that detaches the handlers.
+export function attachSwipe(el, { onDrag, onFlick, onCancel, allow = () => true, onBlocked }) {
   let start = null;
   let samples = [];
 
@@ -51,8 +174,9 @@ export function attachSwipe(el, { onDrag, onFlick, onCancel }) {
       viewportHeight: window.innerHeight,
     };
     start = null;
-    if (isFlick(swipe)) onFlick(swipe.dx, swipe.dy);
-    else onCancel();
+    if (!isFlick(swipe)) onCancel();
+    else if (allow()) onFlick(swipe.dx, swipe.dy);
+    else (onBlocked ?? onCancel)();
   };
 
   const cancel = (e) => {

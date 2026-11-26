@@ -64,6 +64,38 @@ body {
 .pill.ok { color: var(--ok); }
 .pill.err { color: var(--err); }
 
+.direction {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  font-size: .9rem;
+}
+
+.direction #dir-text { flex: 1; }
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex: none;
+}
+.dot.ok { background: var(--ok); }
+
+.link {
+  border: 0;
+  padding: 4px 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .stage {
   flex: 1;
   display: grid;
@@ -79,6 +111,21 @@ body {
   color: var(--muted);
 }
 .notice h2 { color: var(--fg); margin-top: 0; }
+
+.calibrate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.big {
+  margin: 8px 0;
+  font-size: 3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
 .notice code { word-break: break-all; color: var(--fg); }
 
 .card {
@@ -91,6 +138,15 @@ body {
   touch-action: none;
   will-change: transform;
 }
+
+.card {
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 150ms;
+}
+.card.in-range { outline-color: var(--ok); }
+
+.dot { transition: background-color 150ms; }
 
 .card img {
   display: block;

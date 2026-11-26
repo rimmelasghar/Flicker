@@ -15,10 +15,25 @@
     <span id="pair-status" class="pill">…</span>
   </header>
 
+  <section id="direction" class="direction" hidden>
+    <span id="dir-dot" class="dot" aria-hidden="true"></span>
+    <span id="dir-text">Compass off</span>
+    <button id="compass-btn" class="link" type="button">Enable compass</button>
+    <button id="calibrate-btn" class="link" type="button" hidden>Calibrate</button>
+  </section>
+
   <main id="stage" class="stage">
     <section id="unpaired" class="notice" hidden>
       <h2>Not paired</h2>
       <p>On the laptop, open <code>http://localhost:8080/pair</code> and scan the QR code with this phone.</p>
+    </section>
+
+    <section id="calibrate" class="notice calibrate" hidden>
+      <h2>Point at the laptop</h2>
+      <p>Hold the phone the way you will when flicking, top edge towards the laptop, then tap the button.</p>
+      <p id="cal-heading" class="big">–</p>
+      <button id="cal-save" class="button" type="button">This is my laptop</button>
+      <button id="cal-cancel" class="link" type="button">Cancel</button>
     </section>
 
     <section id="empty" class="notice" hidden>
@@ -36,6 +51,7 @@
       Choose photo
       <input id="file-input" type="file" accept="image/*" hidden>
     </label>
+    <button id="wrist-btn" class="link" type="button" hidden>Flick the phone to send: on</button>
   </footer>
 </body>
 </html>
