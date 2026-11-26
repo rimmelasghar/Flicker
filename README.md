@@ -35,7 +35,10 @@ Detect the laptop's Wi-Fi address (this creates `.env` from `.env.example`):
 |---|---|
 | `scripts/detect-ip.sh` | `powershell -ExecutionPolicy Bypass -File scripts\detect-ip.ps1` |
 
-Then open `.env` and set `INBOX_DIR`, the folder where photos should land:
+Then open `.env` and set `INBOX_DIR`, the folder Flick may save into. You can later pick any
+folder *inside* it from the laptop page (step 6), so a broader folder such as your home folder
+gives more choice; a narrow one such as the Desktop is safer, because the container can write
+anywhere inside it.
 
 | OS | Example `INBOX_DIR` |
 |---|---|
@@ -71,14 +74,21 @@ token in a Docker volume.
 
 ### 5. Pair the phone
 
-1. On the laptop open **http://localhost:8080/pair**. This page only works on the laptop.
+1. On the laptop open **http://localhost:8080**. This page only works on the laptop.
 2. Scan the QR code with the phone camera and open the link.
 3. Accept the certificate warning once:
    - iPhone Safari: *Show Details* → *visit this website* → *Visit Website*.
    - Android Chrome: *Advanced* → *Proceed*.
 4. The badge at the top says **Paired**. The phone stays paired across restarts.
 
-### 6. Calibrate and send
+### 6. Choose where photos are saved (optional)
+
+On the laptop page (**http://localhost:8080**), the *Save location* card shows where photos
+go. Browse into a folder, or create one with **New folder**, then click **Save photos here**.
+The choice applies immediately and survives restarts. Only folders inside `INBOX_DIR` are
+offered; hidden folders and links leading outside it are refused.
+
+### 7. Calibrate and send
 
 1. iPhone: tap **Enable compass** and allow *Motion & Orientation*. Android starts the
    compass by itself.
@@ -86,7 +96,7 @@ token in a Docker volume.
 3. Tap **Choose photos** and pick one or more. While the phone points at the laptop the dot
    and the photo outline turn green.
 4. Swipe the photo up, or hold still for a moment and flick the phone towards the laptop.
-   The photo appears in `INBOX_DIR` as `YYYYMMDD-HHMMSS-<name>.<ext>`.
+   The photo appears in the chosen folder as `YYYYMMDD-HHMMSS-<name>.<ext>`.
 
 Optional: *Share → Add to Home Screen* (iPhone) or *Install app* (Android) for a full-screen
 icon. On iPhone the home-screen app may keep its own storage and show *Not paired*; this is
