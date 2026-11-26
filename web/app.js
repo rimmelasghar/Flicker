@@ -72,7 +72,7 @@ async function checkPairing() {
 }
 
 const PILL = {
-  checking: ["Connectingâ€¦", ""],
+  checking: ["Connecting…", ""],
   paired: ["Paired", "ok"],
   unpaired: ["Not paired", "err"],
   offline: ["Laptop unreachable", "err"],
