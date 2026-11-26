@@ -162,6 +162,17 @@ function renderDirection() {
   $("dir-text").textContent = text;
   $("dir-dot").className = `dot ${inRange ? "ok" : ""}`;
   $("card").classList.toggle("in-range", inRange);
+  $("direction").classList.toggle("in-range", inRange);
+  // Needle points to where the laptop is, relative to where the phone points.
+  const gauge = on && reading !== null && state.calibration !== null;
+  $("dir-gauge").hidden = !gauge;
+  if (gauge) {
+    // Signed (-180..180) so the needle does not spin round when it jitters
+    // across straight ahead.
+    const clockwise = normalize(state.calibration.heading - state.heading);
+    const turn = clockwise > 180 ? clockwise - 360 : clockwise;
+    $("dir-gauge").style.setProperty("--turn", `${turn}deg`);
+  }
   $("compass-btn").hidden = on || state.compass === "unsupported" || state.compass === "nodata";
   $("calibrate-btn").hidden = !on || state.calibrating;
   $("calibrate-btn").textContent = state.calibration ? "Re-calibrate" : "Calibrate";
@@ -228,8 +239,8 @@ async function enableMotion({ auto = false } = {}) {
 
 function renderWrist() {
   const btn = $("wrist-btn");
-  btn.hidden = state.pairing === "unpaired" || state.motion !== "on";
-  btn.textContent = `Flick the phone to send: ${state.wristEnabled ? "on" : "off"}`;
+  btn.hidden = state.pairing === "unpaired" || state.motion !== "on" || state.calibrating;
+  btn.setAttribute("aria-checked", String(state.wristEnabled));
 }
 
 function toggleWrist() {
