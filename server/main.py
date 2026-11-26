@@ -10,7 +10,8 @@ from fastapi import APIRouter, Depends, FastAPI, File, UploadFile
 from server import __version__
 from server.auth import TokenStore, token_guard
 from server.certs import ensure_certificate
-from server.config import PHONE_PORT, Settings, load_settings
+from server.config import PAIR_PORT, PHONE_PORT, Settings, load_settings
+from server.pairing import create_pair_app
 from server.upload import save_upload
 
 
@@ -50,7 +51,10 @@ async def serve(settings: Settings) -> None:
             ssl_keyfile=key_path,
         )
     )
-    await phone.serve()
+    pair = uvicorn.Server(
+        uvicorn.Config(create_pair_app(settings, tokens), host="0.0.0.0", port=PAIR_PORT)
+    )
+    await asyncio.gather(phone.serve(), pair.serve())
 
 
 def main() -> None:
