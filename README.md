@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/assets/logo.svg" width="96" alt=""></p>
 <h1 align="center">Flick</h1>
-<p align="center">Flick photos from your phone straight onto your laptop.<br>Same Wi-Fi, no cloud, no app to install.</p>
+<p align="center">Flick photos and videos from your phone straight onto your laptop.<br>Same Wi-Fi, no cloud, no app to install.</p>
 
 <p align="center">
   <picture>
@@ -15,7 +15,7 @@
 </p>
 
 Flick is a personal tool for getting photos off your phone without cables, chat apps or
-cloud drives. Pick a photo on the phone, point the phone at the laptop, and swipe the photo
+cloud drives. Pick photos or videos on the phone, point the phone at the laptop, and swipe the photo
 up, or flick the whole phone towards the laptop. A second later it is in a folder on the
 laptop, byte for byte the original.
 
@@ -31,9 +31,9 @@ across your Wi-Fi. Nothing leaves your network.
 | Laptop | One Docker container: macOS, Windows or Linux |
 | Connection | Direct HTTPS on your Wi-Fi, port 8443, with a self-signed certificate made on first start |
 | Pairing | Scan a QR code once; the phone stays paired across restarts |
-| Sending | Swipe the photo up, or flick the phone, while it points within ±35° of the laptop |
+| Sending | Swipe up, or flick the phone, while it points within ±35° of the laptop; one flick can send a whole selection |
 | Saved to | A folder you pick on the laptop page, as `YYYYMMDD-HHMMSS-<name>.<ext>` |
-| Formats | JPEG, PNG, HEIC/HEIF, WebP, GIF, checked by their bytes; up to 50 MB each |
+| Formats | Photos: JPEG, PNG, HEIC/HEIF, WebP, GIF, up to 50 MB. Videos: MP4, MOV, up to 2 GB. Checked by their bytes |
 | Files | Original bytes: no resizing, no re-encoding, EXIF kept |
 | License | MIT |
 
@@ -97,7 +97,8 @@ example `sudo ufw allow 8443/tcp`.
    Android starts it by itself.
 2. **Calibrate.** Tap *Calibrate*, point the top of the phone at the laptop and tap
    *This is my laptop*. Do it again if the laptop or your seat moves.
-3. **Choose photos.** Pick one or several; they stack up and go one per flick.
+3. **Choose photos & videos.** Pick one or many. With several picked, one flick sends them all,
+   with a progress bar; switch off *Send all with one flick* to send one per flick.
 4. **Send.** While the phone points at the laptop, the needle and the photo outline turn
    green. Swipe the photo up, or hold still for a moment and flick the phone towards the
    laptop. The phone shows *Sent* and the file is in the folder.
@@ -113,7 +114,7 @@ you keep scan it again.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/architecture-dark.png">
-  <img src="docs/assets/architecture-light.png" alt="How a photo travels: the phone browser (pair once, point within 35 degrees, swipe or flick) sends it over the same Wi-Fi with HTTPS to the phone app on port 8443 inside one Docker container on the laptop, which checks the pairing token, rate limit, size and image type, then saves it via a temp file and rename into the chosen folder inside INBOX_DIR. The laptop-only page on port 8080 shows the QR code and picks the folder; /data holds the certificate, token and folder choice.">
+  <img src="docs/assets/architecture-light.png" alt="How a photo travels: the phone browser (pair once, point within 35 degrees, swipe or flick) sends it over the same Wi-Fi with HTTPS to the phone app on port 8443 inside one Docker container on the laptop, which checks the pairing token, rate limit, size and file type (photo or video), then saves it via a temp file and rename into the chosen folder inside INBOX_DIR. The laptop-only page on port 8080 shows the QR code and picks the folder; /data holds the certificate, token and folder choice.">
 </picture>
 
 The figure is `docs/architecture.html`. After editing it, re-render it to
@@ -173,7 +174,8 @@ All settings live in `.env` (see `.env.example`).
 |---|---|---|---|
 | `HOST_IP` | yes | | Laptop's Wi-Fi IP, used in the QR code and the certificate |
 | `INBOX_DIR` | yes | | Folder Flick may save into; the save location is picked inside it |
-| `MAX_FILE_MB` | no | 50 | Per-file size limit |
+| `MAX_FILE_MB` | no | 50 | Per-photo size limit |
+| `MAX_VIDEO_MB` | no | 2048 | Per-video size limit (MP4, MOV) |
 | `PUID` / `PGID` | Linux | 1000 | The container runs as this user, so saved files belong to it |
 | `ANGLE_TOLERANCE` | no | 35 | ± degrees for the direction check (the phone page currently always uses 35) |
 

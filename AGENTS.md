@@ -27,7 +27,7 @@ and it is saved quietly into a folder on the laptop. Same Wi-Fi, direct connecti
 |---|---|---|---|---|
 | GET | `/` | 8443 | none | Phone web app |
 | GET | `/api/ping` | 8443 | token | `{ok, host, version}` |
-| POST | `/api/upload` | 8443 | token | multipart field `file`, one image → `{ok, saved, bytes}` |
+| POST | `/api/upload` | 8443 | token | multipart field `file`, one photo or video → `{ok, saved, bytes}` |
 | GET | `/api/health` | 8443 | none | `{ok}` |
 | GET | `/pair` | 8080 | laptop only | Pairing page with QR code |
 | POST | `/api/token/rotate` | 8080 | laptop only | New token, unpairs all phones |
@@ -35,7 +35,7 @@ and it is saved quietly into a folder on the laptop. Same Wi-Fi, direct connecti
 Port 8443 is published to the LAN. Port 8080 is published to `127.0.0.1` only — do **not** rely on
 client-IP checks (Docker Desktop makes every request look like it comes from the gateway).
 
-Errors: `401` bad/missing token · `413` too large · `415` not an allowed image · `429` rate limited · `507` disk full.
+Errors: `401` bad/missing token · `413` too large · `415` not an allowed photo or video · `429` rate limited · `507` disk full.
 
 ### Config (env vars)
 
@@ -43,7 +43,8 @@ Errors: `401` bad/missing token · `413` too large · `415` not an allowed image
 |---|---|---|---|
 | `HOST_IP` | yes | — | Laptop LAN IP; used in QR code and certificate SANs |
 | `INBOX_DIR` | yes | — | Host folder mounted at `/inbox` |
-| `MAX_FILE_MB` | no | 50 | Per-file cap |
+| `MAX_FILE_MB` | no | 50 | Per-photo cap |
+| `MAX_VIDEO_MB` | no | 2048 | Per-video cap (MP4, MOV) |
 | `PUID` / `PGID` | Linux | 1000 | Owner of saved files |
 | `ANGLE_TOLERANCE` | no | 35 | ± degrees for the direction check |
 
@@ -52,7 +53,7 @@ Errors: `401` bad/missing token · `413` too large · `415` not an allowed image
 - Write to `/inbox/.flick-tmp/<random>`, then `os.replace` into `/inbox` (never a half-written file).
 - Name: `YYYYMMDD-HHMMSS-<sanitised original stem>.<ext>`; add `-1`, `-2`… on collision.
 - Strip path components from the uploaded name; keep only letters, digits, `-`, `_`.
-- Allowed: JPEG, PNG, HEIC/HEIF, WebP, GIF — check by magic bytes (`filetype`), not extension.
+- Allowed: JPEG, PNG, HEIC/HEIF, WebP, GIF photos and MP4/MOV videos — check by magic bytes (`filetype`), not extension.
 - Keep original bytes (no resize, no EXIF changes).
 
 ### Target structure
