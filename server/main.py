@@ -66,6 +66,7 @@ def create_phone_app(
             settings.inbox_dir,
             settings.max_file_bytes,
             folders.destination(),
+            settings.max_video_bytes,
         )
         return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
