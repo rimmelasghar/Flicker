@@ -1,0 +1,25 @@
+services:
+  flick:
+    build: .
+    image: flick:local
+    container_name: flick
+    restart: unless-stopped
+    environment:
+      HOST_IP: ${HOST_IP:?set HOST_IP in .env}
+      MAX_FILE_MB: ${MAX_FILE_MB:-50}
+      ANGLE_TOLERANCE: ${ANGLE_TOLERANCE:-35}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    ports:
+      # Phone-facing port, reachable from the LAN.
+      - "8443:8443"
+      # Pairing page and token rotation: laptop only.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - "${INBOX_DIR:?set INBOX_DIR in .env}:/inbox"
+      - flick-data:/data
+
+volumes:
+  # Certificate, key and pairing token. A named volume (not a bind
+  # mount) so the non-root container user can always write to it.
+  flick-data:
