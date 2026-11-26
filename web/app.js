@@ -12,6 +12,7 @@ const state = {
   host: "",
   // { file: File, url: string } for the photo on the card, or null.
   photo: null,
+  sending: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -105,7 +106,10 @@ function onPick(event) {
   const [file] = event.target.files;
   // Reset so picking the same photo again still fires "change".
   event.target.value = "";
-  if (file) setPhoto(file);
+  if (file) {
+    setPhoto(file);
+    setStatus("Point at the laptop and swipe up.");
+  }
 }
 
 function moveCard(dx, dy) {
@@ -141,10 +145,60 @@ function clearCard() {
   card.style.opacity = "";
 }
 
+const UPLOAD_ERRORS = {
+  401: "Not paired any more. Scan the QR code again.",
+  413: "Photo is too large.",
+  415: "Not a supported image type.",
+  429: "Too many photos at once. Wait a moment.",
+  507: "Laptop disk is full.",
+};
+
+function setStatus(text, tone = "") {
+  const el = $("status");
+  el.textContent = text;
+  el.className = `status ${tone}`;
+}
+
+async function upload(file) {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  const timeout = AbortSignal.timeout?.(120_000);
+  const res = await api("/api/upload", { method: "POST", body, signal: timeout });
+  if (!res.ok) {
+    const error = new Error(UPLOAD_ERRORS[res.status] ?? `Upload failed (${res.status}).`);
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
 async function onFlick(dx) {
+  if (state.sending || !state.photo) return;
+  state.sending = true;
+  const { file } = state.photo;
+  setStatus("Sending…");
+  const sending = upload(file);
   await flyAway(dx);
-  setPhoto(null);
   clearCard();
+  setPhoto(null);
+  try {
+    const result = await sending;
+    setStatus(`Sent: ${result.saved}`, "ok");
+    navigator.vibrate?.(30);
+  } catch (error) {
+    // Put the photo back so the user can flick it again.
+    setPhoto(file);
+    if (error.status === 401) {
+      state.token = null;
+      storeSet(TOKEN_KEY, null);
+      state.pairing = "unpaired";
+      render();
+    }
+    const offline = error instanceof TypeError || error.name === "TimeoutError";
+    setStatus(offline ? "Laptop unreachable. Same Wi-Fi?" : error.message, "err");
+  } finally {
+    state.sending = false;
+  }
 }
 
 async function init() {
