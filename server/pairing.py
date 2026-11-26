@@ -5,15 +5,17 @@ laptop can reach this port; Docker port publishing enforces that, since
 client IPs are unreliable behind Docker Desktop.
 """
 
-import html
 import logging
+from pathlib import Path
 
 import segno
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from server import __version__
 from server.auth import TokenStore
 from server.config import PAIR_PORT, PHONE_PORT, Settings
 from server.folders import FolderStore
@@ -25,42 +27,7 @@ log = logging.getLogger("flick")
 LOCAL_HOSTS = ["localhost", "127.0.0.1"]
 LOCAL_ORIGINS = {f"http://{host}:{PAIR_PORT}" for host in LOCAL_HOSTS}
 NO_STORE = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
-
-PAGE = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flick pairing</title>
-<style>
-  body {{ font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto;
-         padding: 0 1rem; color: #1d1d1f; background: #fff; text-align: center; }}
-  .qr svg {{ display: block; width: min(20rem, 90vw); height: auto; margin: 0 auto;
-            shape-rendering: crispEdges; }}
-  code {{ word-break: break-all; font-size: .85rem; }}
-  ol {{ text-align: left; }}
-</style>
-</head>
-<body>
-<h1>Pair your phone</h1>
-<div class="qr">{qr}</div>
-<ol>
-  <li>Scan this code with the phone camera (phone on the same Wi-Fi).</li>
-  <li>Accept the certificate warning once.</li>
-  <li>The phone is paired; it stays paired across restarts.</li>
-</ol>
-<p>Phone address: <code>{lan_url}</code></p>
-<p><button id="rotate" type="button">Unpair all phones (new code)</button></p>
-<script>
-  document.getElementById("rotate").addEventListener("click", async () => {{
-    if (!confirm("Unpair every phone? Each one must scan the new code.")) return;
-    const res = await fetch("/api/token/rotate", {{ method: "POST" }});
-    if (res.ok) location.reload(); else alert("Could not rotate token");
-  }});
-</script>
-</body>
-</html>
-"""
+PAGE_DIR = Path(__file__).resolve().parent.parent / "pair"
 
 
 def pairing_url(settings: Settings, token: str) -> str:
@@ -115,15 +82,25 @@ def create_pair_app(
         log.info("photos will be saved to %s", display(relative))
         return {"path": relative, "display": display(relative)}
 
-    @app.get("/pair", response_class=HTMLResponse)
-    def pair() -> HTMLResponse:
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse("/pair")
+
+    @app.get("/pair", include_in_schema=False)
+    def pair() -> FileResponse:
+        return FileResponse(PAGE_DIR / "index.html", headers=NO_STORE)
+
+    @app.get("/api/pair")
+    def pair_info() -> JSONResponse:
         qr = segno.make(pairing_url(settings, tokens.current), error="m")
-        page = PAGE.format(
+        body = {
             # omitsize adds a viewBox, so CSS scales the code instead of cropping it.
-            qr=qr.svg_inline(border=4, omitsize=True, dark="#000", light="#fff"),
-            lan_url=html.escape(f"https://{settings.host_ip}:{PHONE_PORT}/"),
-        )
-        return HTMLResponse(page, headers=NO_STORE)
+            "qr_svg": qr.svg_inline(border=2, omitsize=True, dark="#101828", light="#fff"),
+            "phone_url": f"https://{settings.host_ip}:{PHONE_PORT}/",
+            "host": settings.host_ip,
+            "version": __version__,
+        }
+        return JSONResponse(body, headers=NO_STORE)
 
     @app.post("/api/token/rotate")
     def rotate(request: Request) -> dict[str, bool]:
@@ -132,6 +109,7 @@ def create_pair_app(
         log.info("pairing token rotated; all phones unpaired")
         return {"ok": True}
 
+    app.mount("/pair-assets", StaticFiles(directory=PAGE_DIR), name="pair-assets")
     return app
 
 

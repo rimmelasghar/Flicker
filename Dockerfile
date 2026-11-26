@@ -20,6 +20,7 @@ RUN useradd --create-home --uid 1000 flick \
 
 COPY server/ server/
 COPY web/ web/
+COPY pair/ pair/
 
 USER flick
 

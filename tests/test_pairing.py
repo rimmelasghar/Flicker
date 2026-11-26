@@ -16,12 +16,28 @@ def test_pairing_url_carries_token_in_fragment(settings, tokens):
     assert url == f"https://192.168.1.50:8443/#t={tokens.current}"
 
 
-def test_pair_page_shows_qr_code(pair_client):
+def test_pair_page_is_served(pair_client):
     response = pair_client.get("/pair")
     assert response.status_code == 200
-    assert "<svg" in response.text
-    assert "viewBox" in response.text
-    assert "https://192.168.1.50:8443/" in response.text
+    assert response.headers["content-type"].startswith("text/html")
+    assert "/pair-assets/pair.js" in response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert pair_client.get("/pair-assets/pair.css").status_code == 200
+
+
+def test_root_redirects_to_pair_page(pair_client):
+    response = pair_client.get("/", follow_redirects=False)
+    assert response.status_code in (302, 307)
+    assert response.headers["location"] == "/pair"
+
+
+def test_pair_info_has_qr_code_and_address(pair_client):
+    response = pair_client.get("/api/pair")
+    body = response.json()
+    assert "<svg" in body["qr_svg"]
+    assert "viewBox" in body["qr_svg"]
+    assert body["phone_url"] == "https://192.168.1.50:8443/"
+    assert body["host"] == "192.168.1.50"
     assert response.headers["cache-control"] == "no-store"
 
 

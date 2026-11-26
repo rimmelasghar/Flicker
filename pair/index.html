@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Flick · Laptop</title>
+  <link rel="icon" href="/pair-assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/pair-assets/pair.css">
+  <script type="module" src="/pair-assets/pair.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="var(--primary)"/>
+        <path d="M16 7l7.5 8H19v9h-6v-9H8.5z" fill="#fff"/>
+      </svg>
+      <span class="brand-name">Flick</span>
+      <span class="brand-tag">Laptop</span>
+    </div>
+    <div class="status" id="server-status">
+      <span class="status-dot"></span>
+      <span id="server-text">Connecting…</span>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="page-head">
+      <h1>Send photos from your phone</h1>
+      <p class="lead">Pair a phone once, choose where photos land, then flick them across.</p>
+    </div>
+
+    <div class="grid">
+      <section class="card" aria-labelledby="pair-title">
+        <div class="card-head">
+          <div>
+            <h2 id="pair-title">Pair a phone</h2>
+            <p class="muted">Phone and laptop must be on the same Wi-Fi.</p>
+          </div>
+          <span class="badge">Step 1</span>
+        </div>
+
+        <div class="pair-body">
+          <div class="qr-frame" id="qr" aria-label="Pairing QR code">
+            <div class="skeleton"></div>
+          </div>
+          <ol class="steps">
+            <li><strong>Scan</strong> the code with the phone camera and open the link.</li>
+            <li><strong>Accept</strong> the certificate warning once (it is this laptop's own certificate).</li>
+            <li><strong>Calibrate</strong>: point the phone at this laptop and tap <em>This is my laptop</em>.</li>
+          </ol>
+        </div>
+
+        <div class="field">
+          <label class="label" for="phone-url">Phone address</label>
+          <div class="copy-row">
+            <input id="phone-url" class="input mono" readonly value="">
+            <button class="btn btn-secondary" id="copy-url" type="button">Copy</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="folder-title">
+        <div class="card-head">
+          <div>
+            <h2 id="folder-title">Save location</h2>
+            <p class="muted">Where received photos are saved on this laptop.</p>
+          </div>
+          <span class="badge">Step 2</span>
+        </div>
+
+        <div class="current">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>
+          <div class="current-text">
+            <span class="label">Saving to</span>
+            <span class="mono" id="current-folder">…</span>
+          </div>
+        </div>
+
+        <div class="browser">
+          <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+          <ul class="folder-list" id="folder-list" role="list"></ul>
+          <form class="new-folder" id="new-folder" hidden>
+            <input class="input" id="new-folder-name" maxlength="64" placeholder="New folder name" autocomplete="off">
+            <button class="btn btn-secondary" type="submit">Create</button>
+            <button class="btn btn-ghost" type="button" id="new-folder-cancel">Cancel</button>
+          </form>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-ghost" id="new-folder-btn" type="button">
+            <svg class="icon-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            New folder
+          </button>
+          <button class="btn btn-primary" id="choose-btn" type="button">Save photos here</button>
+        </div>
+        <p class="hint">Only folders inside <code>INBOX_DIR</code> are available. To pick from more of this
+          computer, set <code>INBOX_DIR</code> to a higher folder in <code>.env</code> and restart.</p>
+      </section>
+    </div>
+
+    <section class="card danger" aria-labelledby="danger-title">
+      <div class="danger-row">
+        <div>
+          <h2 id="danger-title">Unpair all phones</h2>
+          <p class="muted">Creates a new code. Every paired phone must scan it again.</p>
+        </div>
+        <button class="btn btn-danger" id="rotate" type="button">Unpair all</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span id="version">Flick</span>
+      <span>This page is only reachable from this laptop.</span>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
