@@ -1,5 +1,7 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
+import { attachSwipe } from "./gesture.js";
+
 const TOKEN_KEY = "flick.token";
 const TOKEN_HEADER = "X-Flick-Token";
 
@@ -106,8 +108,28 @@ function onPick(event) {
   if (file) setPhoto(file);
 }
 
+function moveCard(dx, dy) {
+  const card = $("card");
+  card.style.transition = "none";
+  // Follow the finger upwards; resist downward and sideways drags.
+  const y = dy < 0 ? dy : dy * 0.25;
+  card.style.transform = `translate(${dx * 0.3}px, ${y}px) rotate(${dx * 0.03}deg)`;
+}
+
+function resetCard() {
+  const card = $("card");
+  card.style.transition = "transform 200ms ease-out";
+  card.style.transform = "";
+}
+
+function onFlick() {
+  resetCard();
+  setPhoto(null);
+}
+
 async function init() {
   $("file-input").addEventListener("change", onPick);
+  attachSwipe($("card"), { onDrag: moveCard, onFlick, onCancel: resetCard });
   state.token = takeTokenFromLink() ?? storeGet(TOKEN_KEY);
   render();
   await checkPairing();
