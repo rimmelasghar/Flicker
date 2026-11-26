@@ -15,6 +15,7 @@ from server import __version__
 from server.auth import TokenStore, token_guard
 from server.certs import ensure_certificate
 from server.config import PAIR_PORT, PHONE_PORT, Settings, load_settings
+from server.folders import FolderStore
 from server.pairing import create_pair_app
 from server.ratelimit import RateLimiter
 from server.upload import clean_temp, save_upload
@@ -23,11 +24,15 @@ WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
 
 def create_phone_app(
-    settings: Settings, tokens: TokenStore, limiter: RateLimiter | None = None
+    settings: Settings,
+    tokens: TokenStore,
+    limiter: RateLimiter | None = None,
+    folders: FolderStore | None = None,
 ) -> FastAPI:
     """App served to the phone over HTTPS on the LAN."""
     app = FastAPI(title="Flick", docs_url=None, redoc_url=None, openapi_url=None)
     limiter = limiter or RateLimiter()
+    folders = folders or FolderStore(settings.inbox_dir, settings.data_dir)
 
     @app.middleware("http")
     async def rate_limit(
@@ -55,7 +60,13 @@ def create_phone_app(
 
     @protected.post("/upload")
     def upload(file: Annotated[UploadFile, File()]) -> dict[str, bool | str | int]:
-        saved = save_upload(file.file, file.filename, settings.inbox_dir, settings.max_file_bytes)
+        saved = save_upload(
+            file.file,
+            file.filename,
+            settings.inbox_dir,
+            settings.max_file_bytes,
+            folders.destination(),
+        )
         return {"ok": True, "saved": saved.name, "bytes": saved.size}
 
     app.include_router(protected)
