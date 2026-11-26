@@ -17,7 +17,7 @@ from server.certs import ensure_certificate
 from server.config import PAIR_PORT, PHONE_PORT, Settings, load_settings
 from server.pairing import create_pair_app
 from server.ratelimit import RateLimiter
-from server.upload import save_upload
+from server.upload import clean_temp, save_upload
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
@@ -67,6 +67,7 @@ def create_phone_app(
 async def serve(settings: Settings) -> None:
     cert_path, key_path = ensure_certificate(settings.data_dir, settings.host_ip)
     tokens = TokenStore(settings.data_dir)
+    clean_temp(settings.inbox_dir)
     phone = uvicorn.Server(
         uvicorn.Config(
             create_phone_app(settings, tokens),

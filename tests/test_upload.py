@@ -10,6 +10,11 @@ from server.upload import image_extension, safe_stem
 from tests import samples
 
 
+def visible(inbox):
+    """Files a user would see in the inbox (not the hidden temp folder)."""
+    return sorted(p.name for p in inbox.iterdir() if not p.name.startswith("."))
+
+
 def _upload(client, tokens, name="IMG_0001.jpg", data=samples.JPEG):
     return client.post(
         "/api/upload",
@@ -31,7 +36,7 @@ def test_upload_saves_original_bytes(phone_client, tokens, settings):
 def test_same_name_gets_numbered_suffix(phone_client, tokens, settings):
     names = [_upload(phone_client, tokens).json()["saved"] for _ in range(3)]
     assert len(set(names)) == 3
-    assert len(list(settings.inbox_dir.iterdir())) == 3
+    assert len(visible(settings.inbox_dir)) == 3
 
 
 @pytest.mark.parametrize(
@@ -68,7 +73,7 @@ def test_file_over_limit_is_rejected_with_413(small_limit_client, tokens, settin
     big = samples.JPEG + b"\x00" * (1024 * 1024)
     response = _upload(small_limit_client, tokens, data=big)
     assert response.status_code == 413
-    assert list(settings.inbox_dir.iterdir()) == []
+    assert visible(settings.inbox_dir) == []
 
 
 def test_file_exactly_at_limit_is_accepted(small_limit_client, tokens):
@@ -81,7 +86,7 @@ def test_file_exactly_at_limit_is_accepted(small_limit_client, tokens):
 def test_non_image_is_rejected_with_415(phone_client, tokens, settings):
     response = _upload(phone_client, tokens, name="evil.jpg", data=samples.TEXT)
     assert response.status_code == 415
-    assert list(settings.inbox_dir.iterdir()) == []
+    assert visible(settings.inbox_dir) == []
 
 
 @pytest.mark.parametrize(

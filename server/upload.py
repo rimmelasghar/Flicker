@@ -3,7 +3,9 @@
 import datetime as dt
 import errno
 import logging
+import os
 import re
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
@@ -15,6 +17,10 @@ CHUNK = 1024 * 1024
 MAX_STEM = 80
 MAX_COLLISIONS = 1000
 HEAD_BYTES = 512  # enough for every allowed format's signature
+# Uploads are written here first, then moved into the inbox complete.
+TMP_DIR = ".flick-tmp"
+# errno values meaning "this filesystem cannot make hard links".
+LINK_UNSUPPORTED = {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.ENOSYS}
 
 # filetype extension -> extension used for the saved file.
 ALLOWED = {"jpg": "jpg", "png": "png", "apng": "png", "gif": "gif", "webp": "webp", "heic": "heic"}
@@ -59,14 +65,39 @@ def image_extension(head: bytes) -> str | None:
     return "heif" if _heif_brand(head) else None
 
 
-def _open_unique(inbox: Path, base: str, ext: str) -> tuple[Path, BinaryIO]:
+def _publish(tmp: Path, inbox: Path, base: str, ext: str) -> Path:
+    """Move a finished temp file into the inbox under a free name.
+
+    os.link fails if the name exists, so two uploads can never overwrite
+    each other, and the file appears complete in one step. Filesystems
+    without hard links fall back to reserving the name, then os.replace.
+    """
     for n in range(MAX_COLLISIONS):
         path = inbox / (f"{base}.{ext}" if n == 0 else f"{base}-{n}.{ext}")
         try:
-            return path, path.open("xb")
+            os.link(tmp, path)
         except FileExistsError:
             continue
+        except OSError as exc:
+            if exc.errno not in LINK_UNSUPPORTED:
+                raise
+            try:
+                path.open("xb").close()
+            except FileExistsError:
+                continue
+            os.replace(tmp, path)
+            return path
+        tmp.unlink()
+        return path
     raise HTTPException(status.HTTP_409_CONFLICT, "too many files with the same name")
+
+
+def clean_temp(inbox: Path) -> None:
+    """Remove temp files left behind by a crash (call before serving)."""
+    tmp_dir = inbox / TMP_DIR
+    if tmp_dir.is_dir():
+        for leftover in tmp_dir.iterdir():
+            leftover.unlink(missing_ok=True)
 
 
 def _too_large(max_bytes: int) -> HTTPException:
@@ -104,17 +135,18 @@ def save_upload(
         )
     stem = safe_stem(original_name)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    path, target = _open_unique(inbox, f"{stamp}-{stem}", ext)
+    tmp_dir = inbox / TMP_DIR
+    tmp = tmp_dir / secrets.token_hex(8)
     try:
-        with target:
+        tmp_dir.mkdir(exist_ok=True)
+        with tmp.open("xb") as target:
             size = _copy_limited(source, target, max_bytes)
-    except HTTPException:
-        path.unlink(missing_ok=True)
-        raise
+        path = _publish(tmp, inbox, f"{stamp}-{stem}", ext)
     except OSError as exc:
-        path.unlink(missing_ok=True)
         if exc.errno == errno.ENOSPC:
             raise HTTPException(status.HTTP_507_INSUFFICIENT_STORAGE, "disk full") from exc
         raise
+    finally:
+        tmp.unlink(missing_ok=True)
     log.info("received %s (%d KB)", path.name, round(size / 1024))
     return SavedFile(name=path.name, size=size)
