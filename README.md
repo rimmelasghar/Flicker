@@ -111,7 +111,7 @@ All settings live in `.env` (see `.env.example`).
 | `HOST_IP` | yes | — | Laptop LAN IP; used in the QR code and the certificate |
 | `INBOX_DIR` | yes | — | Folder on the laptop where photos are saved |
 | `MAX_FILE_MB` | no | 50 | Per-file size limit |
-| `PUID` / `PGID` | Linux | 1000 | Owner of saved files (applied from milestone M5) |
+| `PUID` / `PGID` | Linux | 1000 | Owner of saved files: the container runs as this user (`id -u` / `id -g`) |
 | `ANGLE_TOLERANCE` | no | 35 | ± degrees for the direction check (the phone page currently always uses 35) |
 
 Ports: `8443` (phone page and API, reachable on the LAN) and `8080` (pairing page, bound to

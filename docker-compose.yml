@@ -4,6 +4,9 @@ services:
     image: flick:local
     container_name: flick
     restart: unless-stopped
+    # Run as the host user so saved photos belong to them (Linux). On
+    # Docker Desktop (macOS/Windows) file ownership is mapped anyway.
+    user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       HOST_IP: ${HOST_IP:?set HOST_IP in .env}
       MAX_FILE_MB: ${MAX_FILE_MB:-50}
