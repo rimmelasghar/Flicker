@@ -18,6 +18,7 @@ def test_pair_page_shows_qr_code(pair_client):
     response = pair_client.get("/pair")
     assert response.status_code == 200
     assert "<svg" in response.text
+    assert "viewBox" in response.text
     assert "https://192.168.1.50:8443/" in response.text
     assert response.headers["cache-control"] == "no-store"
 

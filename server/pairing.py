@@ -33,7 +33,8 @@ PAGE = """<!doctype html>
 <style>
   body {{ font-family: system-ui, sans-serif; max-width: 32rem; margin: 2rem auto;
          padding: 0 1rem; color: #1d1d1f; background: #fff; text-align: center; }}
-  .qr svg {{ width: 18rem; height: 18rem; }}
+  .qr svg {{ display: block; width: min(20rem, 90vw); height: auto; margin: 0 auto;
+            shape-rendering: crispEdges; }}
   code {{ word-break: break-all; font-size: .85rem; }}
   ol {{ text-align: left; }}
 </style>
@@ -72,7 +73,8 @@ def create_pair_app(settings: Settings, tokens: TokenStore) -> FastAPI:
     def pair() -> HTMLResponse:
         qr = segno.make(pairing_url(settings, tokens.current), error="m")
         page = PAGE.format(
-            qr=qr.svg_inline(scale=8, border=2),
+            # omitsize adds a viewBox, so CSS scales the code instead of cropping it.
+            qr=qr.svg_inline(border=4, omitsize=True, dark="#000", light="#fff"),
             lan_url=html.escape(f"https://{settings.host_ip}:{PHONE_PORT}/"),
         )
         return HTMLResponse(page, headers=NO_STORE)
