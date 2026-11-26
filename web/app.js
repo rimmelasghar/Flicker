@@ -1,6 +1,6 @@
 // Flick phone app: UI state, pairing, picking and upload.
 
-import { attachSwipe } from "./gesture.js";
+import { attachSwipe, startWristFlick } from "./gesture.js";
 import { angleDiff, normalize, startCompass } from "./heading.js";
 
 const TOKEN_KEY = "flick.token";
@@ -21,7 +21,19 @@ const state = {
   // { heading, savedAt } saved when the user pointed at the laptop.
   calibration: null,
   calibrating: false,
+  // Recent { t, heading } readings, to check direction from just before a
+  // wrist flick (the flick itself swings the compass).
+  headingLog: [],
+  // Motion sensor: "off" | "on" | "denied" | "unsupported"
+  motion: "off",
+  // User setting: send by flicking the phone itself.
+  wristEnabled: true,
 };
+
+const WRIST_KEY = "flick.wrist";
+const HEADING_LOG_MS = 1500;
+// Direction is judged from the heading this long before the jolt.
+const WRIST_LOOKBACK_MS = 400;
 
 const CALIBRATION_KEY = "flick.calibration";
 // ± degrees from the calibrated laptop heading that still count as
@@ -34,12 +46,12 @@ const COMPASS_TIMEOUT_MS = 2000;
 const SWIPE_ONLY = new Set(["unsupported", "denied", "nodata"]);
 
 // Why a flick may not send right now, or null when it may.
-function directionProblem() {
+function directionProblem(heading = state.heading) {
   if (SWIPE_ONLY.has(state.compass)) return null;
   if (state.compass !== "on") return "Enable the compass first.";
-  if (state.heading === null) return "Waiting for the compass…";
+  if (heading === null) return "Waiting for the compass…";
   if (!state.calibration) return "Calibrate first: point at the laptop and tap Calibrate.";
-  const off = angleDiff(state.heading, state.calibration.heading);
+  const off = angleDiff(heading, state.calibration.heading);
   if (off > ANGLE_TOLERANCE) return `Point at the laptop (${Math.round(off)}° off).`;
   return null;
 }
@@ -121,6 +133,7 @@ function render() {
   const main = !unpaired && !calibrating;
   $("direction").hidden = unpaired;
   renderDirection();
+  renderWrist();
   $("unpaired").hidden = !unpaired;
   $("calibrate").hidden = !calibrating;
   $("empty").hidden = !main || state.photo !== null;
@@ -161,8 +174,17 @@ function pointingText() {
   return `Turn ${turn} ${Math.round(off)}° to the laptop`;
 }
 
+function headingBefore(ms) {
+  const cutoff = performance.now() - ms;
+  const older = state.headingLog.filter((r) => r.t <= cutoff);
+  return (older.at(-1) ?? state.headingLog[0])?.heading ?? state.heading;
+}
+
 function onHeading(degrees) {
   state.heading = degrees;
+  const now = performance.now();
+  state.headingLog.push({ t: now, heading: degrees });
+  state.headingLog = state.headingLog.filter((r) => now - r.t <= HEADING_LOG_MS);
   if (state.compass === "nodata") {
     // Readings arrived late after all: turn the direction check back on.
     state.compass = "on";
@@ -192,6 +214,41 @@ async function enableCompass({ auto = false } = {}) {
       }
     }, COMPASS_TIMEOUT_MS);
   }
+}
+
+async function enableMotion({ auto = false } = {}) {
+  const result = await startWristFlick(onWristFlick);
+  if (auto && result === "denied") return;
+  state.motion = result === "ok" ? "on" : result;
+  render();
+}
+
+function renderWrist() {
+  const btn = $("wrist-btn");
+  btn.hidden = state.pairing === "unpaired" || state.motion !== "on";
+  btn.textContent = `Flick the phone to send: ${state.wristEnabled ? "on" : "off"}`;
+}
+
+function toggleWrist() {
+  state.wristEnabled = !state.wristEnabled;
+  storeSet(WRIST_KEY, state.wristEnabled ? "on" : "off");
+  renderWrist();
+}
+
+// The whole phone was flicked. Only sends with a working compass that
+// pointed at the laptop just before, so putting the phone down cannot send.
+function onWristFlick() {
+  if (!state.wristEnabled || !state.photo || state.sending || state.calibrating) return;
+  if (state.pairing === "unpaired" || document.hidden) return;
+  const problem =
+    state.compass === "on"
+      ? directionProblem(headingBefore(WRIST_LOOKBACK_MS))
+      : "Flicking the phone needs the compass. Swipe the photo up instead.";
+  if (problem) {
+    setStatus(problem, "err");
+    return;
+  }
+  onFlick(0);
 }
 
 function loadCalibration() {
@@ -230,7 +287,10 @@ function onPick(event) {
   event.target.value = "";
   if (file) {
     setPhoto(file);
-    setStatus("Point at the laptop and swipe up.");
+    const wrist = state.wristEnabled && state.motion === "on" && state.compass === "on";
+    setStatus(
+      wrist ? "Point at the laptop, then swipe up or flick the phone." : "Point at the laptop and swipe up.",
+    );
   }
 }
 
@@ -332,7 +392,15 @@ async function onFlick(dx) {
 
 async function init() {
   $("file-input").addEventListener("change", onPick);
-  $("compass-btn").addEventListener("click", () => enableCompass());
+  // One tap asks for both sensors: on iPhone each requestPermission call
+  // must start inside the tap, before any await.
+  $("compass-btn").addEventListener("click", () => {
+    enableMotion();
+    enableCompass();
+  });
+  $("wrist-btn").addEventListener("click", toggleWrist);
+  state.wristEnabled = storeGet(WRIST_KEY) !== "off";
+  enableMotion({ auto: true });
   $("calibrate-btn").addEventListener("click", () => setCalibrating(true));
   $("cal-save").addEventListener("click", saveCalibration);
   $("cal-cancel").addEventListener("click", () => setCalibrating(false));

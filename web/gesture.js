@@ -21,6 +21,76 @@ function velocity(samples) {
   return dt > 0 ? (last.y - first.y) / dt : 0;
 }
 
+// Physical "wrist flick": flicking the whole phone towards the laptop.
+// Needs a fast turn of the phone and a sharp jolt close together, which
+// putting the phone down or walking does not produce.
+const WRIST_ROTATION = 300; // deg/s, peak rotation rate
+const WRIST_ACCEL = 15; // m/s², peak acceleration without gravity
+const WRIST_WINDOW = 250; // ms; both peaks must fall inside this window
+const WRIST_COOLDOWN = 1500; // ms between two wrist flicks
+const GRAVITY = 9.81;
+
+export function isWristFlick(samples) {
+  const rot = Math.max(0, ...samples.map((s) => s.rot));
+  const acc = Math.max(0, ...samples.map((s) => s.acc));
+  return rot >= WRIST_ROTATION && acc >= WRIST_ACCEL;
+}
+
+function motionSample(event) {
+  const r = event.rotationRate;
+  if (!r || (r.alpha == null && r.beta == null && r.gamma == null)) return null;
+  const rot = Math.hypot(r.alpha ?? 0, r.beta ?? 0, r.gamma ?? 0);
+  const a = event.acceleration;
+  const g = event.accelerationIncludingGravity;
+  let acc;
+  if (a && a.x != null) acc = Math.hypot(a.x, a.y ?? 0, a.z ?? 0);
+  else if (g && g.x != null) acc = Math.abs(Math.hypot(g.x, g.y ?? 0, g.z ?? 0) - GRAVITY);
+  else return null;
+  return { rot, acc, t: event.timeStamp };
+}
+
+let motionHandler = null;
+
+export function stopWristFlick() {
+  if (motionHandler) {
+    window.removeEventListener("devicemotion", motionHandler);
+    motionHandler = null;
+  }
+}
+
+// Calls onWristFlick() for each detected flick of the phone. Resolves to
+// "ok", "denied" or "unsupported". On iPhone, call this from a tap (it
+// shares the Motion & Orientation permission with the compass).
+export async function startWristFlick(onWristFlick) {
+  stopWristFlick();
+  const DME = window.DeviceMotionEvent;
+  if (!window.isSecureContext || !DME) return "unsupported";
+  if (typeof DME.requestPermission === "function") {
+    let answer = "denied";
+    try {
+      answer = await DME.requestPermission();
+    } catch {
+      // Thrown when not called from a user gesture.
+    }
+    if (answer !== "granted") return "denied";
+  }
+  let samples = [];
+  let last = -Infinity;
+  motionHandler = (event) => {
+    const sample = motionSample(event);
+    if (!sample) return;
+    samples.push(sample);
+    samples = samples.filter((s) => sample.t - s.t <= WRIST_WINDOW);
+    if (sample.t - last > WRIST_COOLDOWN && isWristFlick(samples)) {
+      last = sample.t;
+      samples = [];
+      onWristFlick();
+    }
+  };
+  window.addEventListener("devicemotion", motionHandler);
+  return "ok";
+}
+
 // Calls onDrag(dx, dy) while the finger moves, then when it lifts either
 // onFlick(dx, dy), onBlocked() for a flick that allow() refused (e.g. the
 // phone is not pointing at the laptop), or onCancel().
