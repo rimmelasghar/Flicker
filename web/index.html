@@ -42,14 +42,15 @@
 
     <div id="card" class="card" hidden>
       <img id="card-img" alt="Selected photo" draggable="false">
+      <span id="stack-count" class="stack-count" hidden></span>
     </div>
   </main>
 
   <footer class="bar bottom">
     <p id="status" class="status" role="status" aria-live="polite"></p>
     <label id="pick" class="button" hidden>
-      Choose photo
-      <input id="file-input" type="file" accept="image/*" hidden>
+      Choose photos
+      <input id="file-input" type="file" accept="image/*" multiple hidden>
     </label>
     <button id="wrist-btn" class="link" type="button" hidden>Flick the phone to send: on</button>
   </footer>

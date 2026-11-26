@@ -13,6 +13,8 @@ const state = {
   host: "",
   // { file: File, url: string } for the photo on the card, or null.
   photo: null,
+  // Further picked photos, sent one per flick after the card.
+  queue: [],
   sending: false,
   // "off" | "on" | "denied" | "unsupported"
   compass: "off",
@@ -279,15 +281,31 @@ function setPhoto(file) {
   state.photo = file ? { file, url: URL.createObjectURL(file) } : null;
   if (state.photo) $("card-img").src = state.photo.url;
   else $("card-img").removeAttribute("src");
+  renderStack();
   render();
 }
 
+// Photos waiting under the top card.
+function renderStack() {
+  const waiting = state.queue.length;
+  $("card").classList.toggle("stacked", waiting > 0);
+  $("stack-count").hidden = waiting === 0;
+  $("stack-count").textContent = `+${waiting}`;
+}
+
+// Show the next waiting photo on the card (or none).
+function showNext() {
+  setPhoto(state.queue.shift() ?? null);
+}
+
 function onPick(event) {
-  const [file] = event.target.files;
+  const files = [...event.target.files];
   // Reset so picking the same photo again still fires "change".
   event.target.value = "";
-  if (file) {
-    setPhoto(file);
+  if (files.length) {
+    state.queue.push(...files);
+    if (!state.photo) showNext();
+    else renderStack();
     const wrist = state.wristEnabled && state.motion === "on" && state.compass === "on";
     setStatus(
       wrist ? "Point at the laptop, then swipe up or flick the phone." : "Point at the laptop and swipe up.",
@@ -370,13 +388,15 @@ async function onFlick(dx) {
   const sending = upload(file);
   await flyAway(dx);
   clearCard();
-  setPhoto(null);
+  showNext();
   try {
     const result = await sending;
-    setStatus(`Sent: ${result.saved}`, "ok");
+    const left = state.queue.length + (state.photo ? 1 : 0);
+    setStatus(`Sent: ${result.saved}${left ? ` (${left} to go)` : ""}`, "ok");
     navigator.vibrate?.(30);
   } catch (error) {
-    // Put the photo back so the user can flick it again.
+    // Put the photo back on top of the stack so it can be flicked again.
+    if (state.photo) state.queue.unshift(state.photo.file);
     setPhoto(file);
     if (error.status === 401) {
       state.token = null;
