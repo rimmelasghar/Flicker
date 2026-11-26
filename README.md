@@ -1,5 +1,7 @@
 # Flick
 
+![Flick: flick photos from your phone straight onto your laptop](docs/assets/cover.svg)
+
 Pick a photo on your phone, point the phone at your laptop, swipe the photo up (or flick the
 phone towards the laptop), and it is saved into a folder on the laptop. Same Wi-Fi, direct
 connection, no cloud, no app to install.
