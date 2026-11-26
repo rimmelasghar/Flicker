@@ -406,6 +406,9 @@ async function onFlick(dx) {
   const { file } = state.photo;
   setStatus("Sending…");
   const sending = upload(file);
+  // The result is awaited after the animation; mark it handled now so an
+  // early failure is not reported as an unhandled rejection meanwhile.
+  sending.catch(() => {});
   await flyAway(dx);
   clearCard();
   showNext();
