@@ -12,9 +12,23 @@
 <body>
   <header class="topbar">
     <div class="brand">
-      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-        <rect width="32" height="32" rx="8" fill="var(--primary)"/>
-        <path d="M16 7l7.5 8H19v9h-6v-9H8.5z" fill="#fff"/>
+      <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#4aa8ff"/>
+            <stop offset="1" stop-color="#0a6cf0"/>
+          </linearGradient>
+        </defs>
+        <rect width="512" height="512" rx="114" fill="url(#logo-bg)"/>
+        <g transform="rotate(-6 256 256)">
+          <g stroke="#fff" stroke-linecap="round" stroke-width="18" fill="none">
+            <line x1="256" y1="384" x2="256" y2="452" opacity="0.75"/>
+            <line x1="206" y1="384" x2="206" y2="424" opacity="0.45"/>
+            <line x1="306" y1="384" x2="306" y2="424" opacity="0.45"/>
+          </g>
+          <rect x="150" y="80" width="212" height="272" rx="34" fill="#fff"/>
+          <path d="M196 236 L256 176 L316 236 M256 184 V298" fill="none" stroke="#0a84ff" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+        </g>
       </svg>
       <span class="brand-name">Flick</span>
       <span class="brand-tag">Laptop</span>
