@@ -221,3 +221,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Flick runtime data: certificates, keys, pairing token
+data/
+
+# Local test inbox (uploaded images)
+inbox/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
