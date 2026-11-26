@@ -287,11 +287,39 @@ function saveCalibration() {
   setCalibrating(false);
 }
 
+const isVideo = (file) => file.type.startsWith("video/");
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "Video";
+  const s = Math.round(seconds);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+// Show a photo or video on the card (a muted, looping preview for videos).
 function setPhoto(file) {
   if (state.photo) URL.revokeObjectURL(state.photo.url);
   state.photo = file ? { file, url: URL.createObjectURL(file) } : null;
-  if (state.photo) $("card-img").src = state.photo.url;
-  else $("card-img").removeAttribute("src");
+  const img = $("card-img");
+  const video = $("card-video");
+  const showVideo = state.photo !== null && isVideo(state.photo.file);
+  img.hidden = showVideo;
+  video.hidden = !showVideo;
+  $("video-badge").hidden = !showVideo;
+  if (showVideo) {
+    img.removeAttribute("src");
+    $("video-duration").textContent = "Video";
+    video.src = state.photo.url;
+    video.onloadedmetadata = () => {
+      $("video-duration").textContent = formatDuration(video.duration);
+    };
+    video.play().catch(() => {});
+  } else {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+    if (state.photo) img.src = state.photo.url;
+    else img.removeAttribute("src");
+  }
   renderStack();
   render();
 }
@@ -359,8 +387,8 @@ function clearCard() {
 
 const UPLOAD_ERRORS = {
   401: "Not paired any more. Scan the QR code again.",
-  413: "Photo is too large.",
-  415: "Not a supported image type.",
+  413: "File is too large.",
+  415: "Not a supported photo or video.",
   429: "Too many photos at once. Wait a moment.",
   507: "Laptop disk is full.",
 };

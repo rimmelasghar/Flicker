@@ -85,11 +85,16 @@
         <rect x="98" y="74" width="60" height="5" rx="2.5" class="hero-laptop"/>
       </svg>
       <h2>Ready to send</h2>
-      <p>Choose photos, point the phone at your laptop, then swipe up or flick.</p>
+      <p>Choose photos or videos, point the phone at your laptop, then swipe up or flick.</p>
     </section>
 
     <div id="card" class="card" hidden>
       <img id="card-img" alt="Selected photo" draggable="false">
+      <video id="card-video" muted playsinline loop preload="metadata" hidden></video>
+      <span id="video-badge" class="video-badge" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>
+        <span id="video-duration">Video</span>
+      </span>
       <span id="stack-count" class="stack-count" hidden></span>
     </div>
     <p class="swipe-hint" aria-hidden="true">
@@ -106,8 +111,8 @@
     </div>
     <label id="pick" class="btn btn-primary btn-block" hidden>
       <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="M21 15l-5-5-8 9"/></svg>
-      Choose photos
-      <input id="file-input" type="file" accept="image/*" multiple hidden>
+      Choose photos &amp; videos
+      <input id="file-input" type="file" accept="image/*,video/*" multiple hidden>
     </label>
     <button id="wrist-btn" class="switch-row" type="button" role="switch" aria-checked="true" hidden>
       <span class="switch-label">Flick the phone to send</span>

@@ -206,14 +206,32 @@ code {
   transition: outline-color .15s;
 }
 .card.in-range { outline-color: var(--ok); }
-.card img {
+.card img, .card video {
   display: block;
   width: 100%;
   max-height: 56vh;
   object-fit: cover;
   border-radius: var(--radius);
   pointer-events: none;
+  background: var(--surface-2);
 }
+.video-badge {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 999px;
+  background: rgb(16 24 40 / .65);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  font-size: .8rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.video-badge svg { width: 14px; height: 14px; fill: currentColor; }
 .card.stacked {
   box-shadow:
     0 8px 0 -3px var(--surface),
