@@ -419,17 +419,71 @@ function skip() {
   showNext();
 }
 
-async function upload(file) {
-  const body = new FormData();
-  body.append("file", file, file.name);
-  const timeout = AbortSignal.timeout?.(120_000);
-  const res = await api("/api/upload", { method: "POST", body, signal: timeout });
-  if (!res.ok) {
-    const error = new Error(UPLOAD_ERRORS[res.status] ?? `Upload failed (${res.status}).`);
-    error.status = res.status;
-    throw error;
-  }
-  return res.json();
+// Give up when an upload makes no progress for this long. There is no
+// overall time limit: a 2 GB video on slow Wi-Fi may take many minutes.
+const STALL_MS = 60_000;
+
+function offlineError(name) {
+  const error = new Error("Laptop unreachable. Same Wi-Fi?");
+  error.name = name;
+  error.offline = true;
+  return error;
+}
+
+// XMLHttpRequest rather than fetch: only XHR reports upload progress.
+// onProgress(fraction) is called as bytes leave the phone.
+function upload(file, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let stall;
+    const watch = () => {
+      clearTimeout(stall);
+      stall = setTimeout(() => {
+        xhr.abort();
+        reject(offlineError("TimeoutError"));
+      }, STALL_MS);
+    };
+    xhr.open("POST", "/api/upload");
+    xhr.setRequestHeader(TOKEN_HEADER, state.token ?? "");
+    xhr.responseType = "json";
+    xhr.upload.onprogress = (event) => {
+      watch();
+      if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+    };
+    // All bytes sent: the laptop is now saving, which can take a while for
+    // a big video, so stop the stall timer.
+    xhr.upload.onload = () => clearTimeout(stall);
+    xhr.onload = () => {
+      clearTimeout(stall);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(xhr.response ?? {});
+        return;
+      }
+      const error = new Error(UPLOAD_ERRORS[xhr.status] ?? `Upload failed (${xhr.status}).`);
+      error.status = xhr.status;
+      reject(error);
+    };
+    xhr.onerror = () => {
+      clearTimeout(stall);
+      reject(offlineError("NetworkError"));
+    };
+    const body = new FormData();
+    body.append("file", file, file.name);
+    watch();
+    xhr.send(body);
+  });
+}
+
+// Progress bar under the status line; fraction null hides it.
+function showProgress(fraction, label = "Sending") {
+  const bar = $("progress");
+  bar.hidden = fraction === null;
+  if (fraction === null) return;
+  const percent = Math.round(fraction * 100);
+  $("progress-fill").style.width = `${percent}%`;
+  const el = $("status");
+  el.textContent = `${label}… ${percent}%`;
+  el.className = "status";
 }
 
 // A real flick while not pointing at the laptop: spring back and say why.
@@ -444,7 +498,8 @@ async function onFlick(dx) {
   state.sending = true;
   const { file } = state.photo;
   setStatus("Sending…");
-  const sending = upload(file);
+  showProgress(0);
+  const sending = upload(file, (fraction) => showProgress(fraction));
   // The result is awaited after the animation; mark it handled now so an
   // early failure is not reported as an unhandled rejection meanwhile.
   sending.catch(() => {});
@@ -466,11 +521,11 @@ async function onFlick(dx) {
       state.pairing = "unpaired";
       render();
     }
-    const offline = error instanceof TypeError || error.name === "TimeoutError";
-    setStatus(offline ? "Laptop unreachable. Same Wi-Fi?" : error.message, "err");
+    setStatus(error.message, "err");
     if (error.status === 413 || error.status === 415) showErrorActions("skip");
     else if (error.status !== 401) showErrorActions("retry");
   } finally {
+    showProgress(null);
     state.sending = false;
   }
 }

@@ -292,6 +292,23 @@ code {
 .status.ok { color: var(--ok); background: var(--ok-soft); }
 .status.err { color: var(--err); background: var(--err-soft); }
 
+.progress {
+  width: 100%;
+  max-width: 24rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width .2s ease-out;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
